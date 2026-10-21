@@ -6,11 +6,10 @@ node_modules/
 # directo (netlify deploy), no por git. Ver README para cómo conseguirlos.
 models/*/*.onnx
 
-# Nunca al repositorio de GitHub: fotos, miniaturas, CSV, metadatos ni embeddings de personas reales.
-# Sí se despliegan a Netlify (ver .netlifyignore) porque el equipo aprobó publicarlas allí;
-# lo que no queremos es que queden también en el historial permanente de un repo público.
+# Nunca al repositorio: fotos originales, CSV ni embeddings (quedarían ligados a las
+# miniaturas públicas + el vector exacto de cada rostro, más sensible que la miniatura sola).
+# Las miniaturas y los metadatos (nombre/delito, ya públicos en PNP/Interpol) sí se versionan,
+# porque ahora el repo es la fuente del despliegue automático en Netlify.
 gallery/source/
 gallery/*.csv
 gallery/embeddings.ndjson
-gallery/thumbs/
-gallery/meta.json
