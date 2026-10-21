@@ -35,7 +35,8 @@ function extraByIdInterpol() {
       map.set(`interpol-${(r.entity_id || '').replace(/[^\w]/g, '_')}-${i}`, {
         sexo: sexoTexto(r.sexo), fecha_nacimiento: r.fecha_nacimiento || '', nacionalidad: r.nacionalidades || '',
         estatura_m: num(r.estatura_m), peso_kg: num(r.peso_kg), color_ojos: r.color_ojos || '',
-        color_cabello: r.color_cabello || '', senas_particulares: (r.senas_particulares || '').slice(0, 300),
+        color_cabello: r.color_cabello || '', senas_particulares: r.senas_particulares || '',
+        delito: r.delitos || '', // corrige el truncado a 300 caracteres de una versión anterior del script
       });
     });
   }
@@ -62,10 +63,12 @@ async function main() {
     if (!e) continue;
     await pool.query(
       `update rostros set sexo=$2, fecha_nacimiento=$3, nacionalidad=$4, estatura_m=$5, peso_kg=$6,
-         color_ojos=$7, color_cabello=$8, senas_particulares=$9, departamento=$10, provincia=$11, monto_recompensa=$12
+         color_ojos=$7, color_cabello=$8, senas_particulares=$9, departamento=$10, provincia=$11, monto_recompensa=$12,
+         delito=coalesce(nullif($13,''), delito)
        where id=$1`,
       [m.id, e.sexo || null, e.fecha_nacimiento || null, e.nacionalidad || null, e.estatura_m ?? null, e.peso_kg ?? null,
-        e.color_ojos || null, e.color_cabello || null, e.senas_particulares || null, e.departamento || null, e.provincia || null, e.monto_recompensa ?? null]
+        e.color_ojos || null, e.color_cabello || null, e.senas_particulares || null, e.departamento || null, e.provincia || null, e.monto_recompensa ?? null,
+        e.delito || '']
     );
     updated++;
     if (updated % 100 === 0) console.log(`  ${updated}…`);

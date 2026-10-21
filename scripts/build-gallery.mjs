@@ -60,7 +60,7 @@ function interpolRecords() {
         id: `interpol-${(r.entity_id || '').replace(/[^\w]/g, '_')}-${i}`,
         fuente: 'INTERPOL',
         nombre: titleCase(`${r.nombres || ''} ${r.apellidos || ''}`.trim()),
-        delito: (r.delitos || '').slice(0, 300),
+        delito: r.delitos || '',
         lugar: [r.pais_nacimiento, r.nacionalidades].filter(Boolean).join(' / '),
         url_ficha: r.url_ficha || '',
         photoPath: path.join(INTERPOL_DIR, 'fotos', rel.replace(/\\/g, '/')),
@@ -71,7 +71,7 @@ function interpolRecords() {
         peso_kg: num(r.peso_kg),
         color_ojos: r.color_ojos || '',
         color_cabello: r.color_cabello || '',
-        senas_particulares: (r.senas_particulares || '').slice(0, 300),
+        senas_particulares: r.senas_particulares || '',
       });
     });
   }
