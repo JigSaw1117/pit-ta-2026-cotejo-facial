@@ -23,6 +23,8 @@ export default async (req) => {
     const k = Math.min(Math.max(Number(limit) || 5, 1), 20);
     const { rows } = await getPool().query(
       `select id, fuente, nombre, delito, lugar, url_ficha, thumb, dip,
+              sexo, fecha_nacimiento, nacionalidad, estatura_m, peso_kg, color_ojos, color_cabello,
+              senas_particulares, departamento, provincia, monto_recompensa,
               1 - (embedding <=> $1::vector) as similitud
          from rostros
         order by embedding <=> $1::vector

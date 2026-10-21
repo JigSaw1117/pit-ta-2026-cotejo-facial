@@ -30,6 +30,9 @@ function titleCase(s) {
   return s.toLowerCase().replace(/\b\p{L}/gu, (c) => c.toUpperCase());
 }
 
+const sexoTexto = (s) => ({ M: 'Masculino', F: 'Femenino', '1': 'Masculino', '2': 'Femenino' }[String(s || '').trim().toUpperCase()] || s || '');
+const num = (s) => { const n = parseFloat(String(s || '').replace(',', '.')); return Number.isFinite(n) ? n : null; };
+
 function pnpRecords() {
   const rows = readCsv(path.join(PNP_DIR, 'candidatos_hombres.csv'));
   return rows.map((r) => ({
@@ -40,6 +43,10 @@ function pnpRecords() {
     lugar: [r.provincia, r.departamento].filter(Boolean).join(', '),
     url_ficha: r.url_ficha || '',
     photoPath: path.join(PNP_DIR, (r.archivo_foto || '').replace(/\\/g, '/')),
+    sexo: sexoTexto(r.sexo_texto || r.sexo),
+    departamento: r.departamento || '',
+    provincia: r.provincia || '',
+    monto_recompensa: num(r.montoRecompensa),
   })).filter((r) => r.photoPath);
 }
 
@@ -57,6 +64,14 @@ function interpolRecords() {
         lugar: [r.pais_nacimiento, r.nacionalidades].filter(Boolean).join(' / '),
         url_ficha: r.url_ficha || '',
         photoPath: path.join(INTERPOL_DIR, 'fotos', rel.replace(/\\/g, '/')),
+        sexo: sexoTexto(r.sexo),
+        fecha_nacimiento: r.fecha_nacimiento || '',
+        nacionalidad: r.nacionalidades || '',
+        estatura_m: num(r.estatura_m),
+        peso_kg: num(r.peso_kg),
+        color_ojos: r.color_ojos || '',
+        color_cabello: r.color_cabello || '',
+        senas_particulares: (r.senas_particulares || '').slice(0, 300),
       });
     });
   }
@@ -83,9 +98,9 @@ async function processOne(rec) {
     .webp({ quality: 80 })
     .toFile(path.join(OUT_THUMBS, `${rec.id}.webp`));
 
+  const { photoPath, ...fields } = rec; // todo lo del CSV (sexo, estatura, delito, etc.), menos la ruta local
   return {
-    id: rec.id, fuente: rec.fuente, nombre: rec.nombre, delito: rec.delito, lugar: rec.lugar,
-    url_ficha: rec.url_ficha, thumb: `gallery/thumbs/${rec.id}.webp`, dip: face.dip,
+    ...fields, thumb: `gallery/thumbs/${rec.id}.webp`, dip: face.dip,
     status: 'ok', embedding: Array.from(face.embedding),
   };
 }

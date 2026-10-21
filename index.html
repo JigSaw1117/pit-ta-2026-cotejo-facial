@@ -115,6 +115,8 @@ header { background:var(--graphite); color:var(--on-graphite); }
 .facts { grid-column:2; font-size:12.5px; color:var(--mute); display:flex; gap:14px; flex-wrap:wrap; }
 .facts .v { font-family:var(--mono); color:var(--ink); }
 .cap { color:var(--marker-ink); background:var(--marker); padding:0 6px; font-weight:700; font-size:12px; }
+.ficha { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:4px 14px; margin-top:10px; padding-top:10px; border-top:1px dashed var(--line); font-size:12.5px; }
+.ficha div { color:var(--mute); } .ficha b { color:var(--ink); font-weight:600; display:block; }
 .verdict { margin:10px 0 0; padding:8px 12px; border-left:4px solid var(--marker); background:var(--blue-soft); font-size:13.5px; }
 .legal { border-left:4px solid var(--marker); padding:10px 14px; margin:0; font:400 15px/1.5 var(--serif); }
 .actions { display:flex; gap:10px; flex-wrap:wrap; padding:14px 18px; border-top:1px solid var(--line); }
@@ -417,11 +419,26 @@ function renderSearchResults(d) {
     const el = document.createElement('div'); el.className = 'res';
     const img = document.createElement('img'); img.src = '/' + m.thumb; img.alt = m.nombre || m.id;
     const body = document.createElement('div');
+    const campo = (label, val) => val ? `<div>${label}<b>${val}</b></div>` : '';
+    const ficha = [
+      campo('Sexo', m.sexo),
+      campo('Nacido', m.fecha_nacimiento),
+      campo('Nacionalidad', m.nacionalidad),
+      campo('Estatura', m.estatura_m ? m.estatura_m + ' m' : ''),
+      campo('Peso', m.peso_kg ? m.peso_kg + ' kg' : ''),
+      campo('Ojos', m.color_ojos),
+      campo('Cabello', m.color_cabello),
+      campo('Departamento', m.departamento),
+      campo('Provincia', m.provincia),
+      campo('Recompensa', m.monto_recompensa ? 'S/ ' + m.monto_recompensa.toLocaleString('es-PE') : ''),
+    ].join('');
+    const senas = m.senas_particulares ? `<div class="small" style="margin-top:6px"><b>Señas particulares:</b> ${m.senas_particulares}</div>` : '';
     body.innerHTML = `<h3>${m.nombre || '(sin nombre)'} <span class="badge">${m.fuente}</span></h3>
       <div class="small">${m.delito || ''}${m.lugar ? ' · ' + m.lugar : ''}</div>
       ${m.url_ficha ? `<div class="linkficha"><a href="${m.url_ficha}" target="_blank" rel="noopener">Ver ficha original ↗</a></div>` : ''}
       <div class="model"><span>buffalo_l</span><div class="ladder" role="img" aria-label="${m.escala}">${LEVELS.map((n, i) => `<div class="${i === m.nivel ? 'on l' + i : ''}">${n}</div>`).join('')}</div></div>
-      <div class="facts"><span>Similitud <span class="v">${m.similitud.toFixed(3)}</span></span><span>DIP mínima <span class="v">${m.dipMin} px</span></span>${m.calidadLimita ? '<span class="cap">La calidad limita la valoración</span>' : ''}</div>`;
+      <div class="facts"><span>Similitud <span class="v">${m.similitud.toFixed(3)}</span></span><span>DIP mínima <span class="v">${m.dipMin} px</span></span>${m.calidadLimita ? '<span class="cap">La calidad limita la valoración</span>' : ''}</div>
+      ${ficha ? `<div class="ficha">${ficha}</div>` : ''}${senas}`;
     el.append(img, body); host.append(el);
   });
 }
