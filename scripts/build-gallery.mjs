@@ -43,6 +43,7 @@ function pnpRecords() {
     lugar: [r.provincia, r.departamento].filter(Boolean).join(', '),
     url_ficha: r.url_ficha || '',
     photoPath: path.join(PNP_DIR, (r.archivo_foto || '').replace(/\\/g, '/')),
+    archivo: path.basename((r.archivo_foto || r.foto_plana || '').replace(/\\/g, '/')),
     sexo: sexoTexto(r.sexo_texto || r.sexo),
     departamento: r.departamento || '',
     provincia: r.provincia || '',
@@ -55,6 +56,7 @@ function interpolRecords() {
   const out = [];
   for (const r of rows) {
     const archivos = (r.archivos_foto || '').split(';').map((s) => s.trim()).filter(Boolean);
+    const planos = (r.archivos_foto_planos || '').split(';').map((s) => s.trim()).filter(Boolean);
     archivos.forEach((rel, i) => {
       out.push({
         id: `interpol-${(r.entity_id || '').replace(/[^\w]/g, '_')}-${i}`,
@@ -64,6 +66,8 @@ function interpolRecords() {
         lugar: [r.pais_nacimiento, r.nacionalidades].filter(Boolean).join(' / '),
         url_ficha: r.url_ficha || '',
         photoPath: path.join(INTERPOL_DIR, 'fotos', rel.replace(/\\/g, '/')),
+        archivo: path.basename(rel.replace(/\\/g, '/')),
+        archivoAlt: planos[i] ? path.basename(planos[i].replace(/\\/g, '/')) : '',
         sexo: sexoTexto(r.sexo),
         fecha_nacimiento: r.fecha_nacimiento || '',
         nacionalidad: r.nacionalidades || '',

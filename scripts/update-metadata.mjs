@@ -22,6 +22,7 @@ function extraByIdPNP() {
     map.set(`pnp-${r.idRequisitoriado || r.id}`, {
       sexo: sexoTexto(r.sexo_texto || r.sexo), departamento: r.departamento || '', provincia: r.provincia || '',
       monto_recompensa: num(r.montoRecompensa),
+      archivo: path.basename((r.archivo_foto || r.foto_plana || '').replace(/\\/g, '/')),
     });
   }
   return map;
@@ -31,12 +32,15 @@ function extraByIdInterpol() {
   const map = new Map();
   for (const r of rows) {
     const archivos = (r.archivos_foto || '').split(';').map((s) => s.trim()).filter(Boolean);
-    archivos.forEach((_, i) => {
+    const planos = (r.archivos_foto_planos || '').split(';').map((s) => s.trim()).filter(Boolean);
+    archivos.forEach((rel, i) => {
       map.set(`interpol-${(r.entity_id || '').replace(/[^\w]/g, '_')}-${i}`, {
         sexo: sexoTexto(r.sexo), fecha_nacimiento: r.fecha_nacimiento || '', nacionalidad: r.nacionalidades || '',
         estatura_m: num(r.estatura_m), peso_kg: num(r.peso_kg), color_ojos: r.color_ojos || '',
         color_cabello: r.color_cabello || '', senas_particulares: r.senas_particulares || '',
         delito: r.delitos || '', // corrige el truncado a 300 caracteres de una versión anterior del script
+        archivo: path.basename(rel.replace(/\\/g, '/')),
+        archivoAlt: planos[i] ? path.basename(planos[i].replace(/\\/g, '/')) : '',
       });
     });
   }
