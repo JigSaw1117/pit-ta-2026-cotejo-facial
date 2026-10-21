@@ -3,9 +3,9 @@
   # Los .onnx pesan más de 100 MB y no están en git (GitHub los rechaza). Se bajan en cada
   # build desde el release público de InsightFace, igual que haría cualquiera que clone el repo.
   command = """
-    mkdir -p models && \
+    mkdir -p models/buffalo_l && \
     curl -fL -o /tmp/buffalo_l.zip https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip && \
-    unzip -o /tmp/buffalo_l.zip -d models
+    unzip -o /tmp/buffalo_l.zip -d models/buffalo_l
   """
 
 [[headers]]
