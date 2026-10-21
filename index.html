@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cotejo facial · PIT-TA-2026</title>
+<meta name="description" content="Prueba del equipo: cotejo facial de apoyo para la pericia PIT-TA-2026. Corre en el navegador, sin subir imágenes a ningún servidor.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
+<style>
+:root {
+  --bench:#E6EBEE; --sheet:#F8FAFA; --ink:#182025; --mute:#586973; --line:#C9D2D7;
+  --graphite:#1D2529; --graphite-2:#2B363C; --on-graphite:#E8EEF1;
+  --marker:#F2C318; --marker-ink:#2A2200; --blue:#24527A; --blue-soft:#DCE8F2;
+  --lv0:#8696A0; --lv1:#6B7C86; --lv2:#4F7FA8; --lv3:#316796; --lv4:#1B4A78;
+  --ui:'Archivo',system-ui,'Segoe UI',sans-serif; --serif:'Newsreader',Georgia,serif;
+  --mono:ui-monospace,'Cascadia Mono',Consolas,monospace;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bench:#0F1518; --sheet:#172025; --ink:#E4EBEE; --mute:#8FA1AB; --line:#2B3A41;
+  --graphite:#0A0F11; --graphite-2:#1B262B; --blue:#7DB1DD; --blue-soft:#1D2D3A;
+  --lv0:#5E6F79; --lv1:#7C8E98; --lv2:#5B8DB8; --lv3:#6DA3D0; --lv4:#8DBDE6;
+}
+  .zones .z1, .zones .z2, .zones .z3, .zones .z4, .ladder div.on.l1, .ladder div.on.l2, .ladder div.on.l3, .ladder div.on.l4 { color:#0B1417; }
+}
+* { box-sizing:border-box; }
+html { background:var(--bench); }
+body { margin:0; color:var(--ink); font:15px/1.5 var(--ui); background:var(--bench); }
+:focus-visible { outline:3px solid var(--marker); outline-offset:2px; }
+.sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+
+header { background:var(--graphite); color:var(--on-graphite); }
+.bar { max-width:1280px; margin:0 auto; padding:14px 20px; display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
+.tag { background:var(--marker); color:var(--marker-ink); font-weight:800; font-stretch:75%; font-size:13px; padding:3px 9px; letter-spacing:.02em; }
+.bar h1 { margin:0; font-size:19px; font-weight:700; font-stretch:90%; }
+.bar .note { margin-left:auto; font-size:13px; color:#9FB0B9; display:flex; align-items:center; gap:8px; }
+.dot { width:8px; height:8px; border-radius:50%; background:#5FB88A; }
+.dot.loading { background:#F2C318; animation:pulse 1.1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity:.3; } }
+@media (prefers-reduced-motion: reduce) { .dot.loading { animation:none; } }
+
+.band { background:var(--blue-soft); border-bottom:1px solid var(--line); }
+.band .pad { max-width:1280px; margin:0 auto; padding:10px 20px; font-size:13.5px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.band strong { white-space:nowrap; }
+.bprog { flex:1; min-width:160px; height:6px; background:var(--line); position:relative; overflow:hidden; }
+.bprog i { position:absolute; inset:0 auto 0 0; background:var(--blue); width:0%; transition:width .25s; }
+
+.layout { max-width:1280px; margin:0 auto; padding:20px; display:grid; grid-template-columns:340px minmax(0,1fr); gap:20px; align-items:start; }
+@media (max-width:920px) { .layout { grid-template-columns:1fr; } }
+
+.prep { background:var(--sheet); border:1px solid var(--line); }
+.step { padding:16px 18px; border-bottom:1px solid var(--line); }
+.step:last-child { border-bottom:0; }
+.step h2 { margin:0 0 10px; font-size:15px; font-weight:700; display:flex; gap:10px; align-items:baseline; }
+.n { display:inline-grid; place-items:center; width:22px; height:22px; background:var(--graphite); color:var(--marker); font-size:12px; font-weight:800; flex:none; }
+.drop { display:grid; place-items:center; text-align:center; gap:2px; padding:18px 12px; border:1.5px dashed var(--mute); cursor:pointer; color:var(--mute); min-height:92px; position:relative; }
+.drop:hover, .drop.over { border-color:var(--blue); color:var(--ink); background:var(--blue-soft); }
+.drop:has(input:focus-visible) { outline:3px solid var(--marker); outline-offset:2px; }
+.drop strong { color:var(--ink); font-weight:600; }
+.drop small { font-size:12.5px; }
+.drop.disabled { opacity:.5; pointer-events:none; }
+.files { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.chip { position:relative; width:64px; }
+.chip img { width:64px; height:64px; object-fit:cover; display:block; border:1px solid var(--line); }
+.chip button { position:absolute; top:-6px; right:-6px; width:20px; height:20px; border-radius:50%; border:0; background:var(--graphite); color:#fff; font-size:13px; line-height:1; cursor:pointer; }
+.chip span { display:block; font-size:11px; color:var(--mute); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.go { width:100%; padding:13px; border:0; background:var(--graphite); color:var(--marker); font:700 16px var(--ui); cursor:pointer; }
+.go:disabled { opacity:.45; cursor:not-allowed; }
+.go:not(:disabled):hover { background:var(--graphite-2); }
+.status { font-size:13px; color:var(--mute); margin-top:8px; min-height:1.4em; }
+.status.err { color:#B3261E; } @media (prefers-color-scheme: dark) { .status.err { color:#FF8A80; } }
+
+.mesa { min-width:0; }
+.panel { background:var(--sheet); border:1px solid var(--line); margin-bottom:20px; }
+.panel > h2 { margin:0; padding:12px 18px; font-size:15px; font-weight:700; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.panel > h2 .r { margin-left:auto; font-weight:400; font-size:13px; color:var(--mute); }
+.pad { padding:18px; }
+.lead { font:400 17px/1.55 var(--serif); max-width:62ch; margin:0 0 6px; }
+.small { font-size:13px; color:var(--mute); }
+
+.ruler { margin:26px 6px 6px; position:relative; }
+.zones { display:grid; grid-template-columns:var(--cols); height:34px; }
+.zones div { display:flex; align-items:center; padding-left:8px; font-size:12px; font-weight:600; color:#fff; white-space:nowrap; overflow:hidden; }
+.z0 { background:var(--lv0); } .z1 { background:var(--lv1); } .z2 { background:var(--lv2); } .z3 { background:var(--lv3); } .z4 { background:var(--lv4); }
+.ticks { position:relative; height:20px; font-size:12px; color:var(--mute); }
+.ticks span { position:absolute; transform:translateX(-50%); top:4px; }
+.ticks span::before { content:''; position:absolute; left:50%; top:-6px; height:6px; border-left:1px solid var(--mute); }
+.pin { position:absolute; top:-22px; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; transition:left .6s cubic-bezier(.2,.8,.2,1); }
+.pin b { background:var(--marker); color:var(--marker-ink); font-size:12px; padding:1px 7px; font-weight:800; white-space:nowrap; }
+.pin i { width:2px; height:50px; background:var(--marker); }
+@media (prefers-reduced-motion: reduce) { .pin { transition:none; } }
+.rulerlabel { font-size:12.5px; color:var(--mute); margin-top:4px; }
+
+.viewer { background:var(--graphite); display:grid; place-items:center; padding:14px; }
+.viewer canvas { max-width:100%; max-height:62vh; cursor:pointer; background:#000; }
+.facebar { display:flex; gap:8px; flex-wrap:wrap; padding:12px 18px; border-top:1px solid var(--line); align-items:center; }
+.fbtn { border:1px solid var(--line); background:transparent; color:var(--ink); padding:5px 12px 5px 6px; font:600 13px var(--ui); cursor:pointer; display:flex; gap:8px; align-items:center; }
+.fbtn em { font-style:normal; background:var(--marker); color:var(--marker-ink); padding:0 6px; font-weight:800; }
+.fbtn[aria-pressed=true] { border-color:var(--blue); background:var(--blue-soft); }
+
+.res { display:grid; grid-template-columns:92px minmax(0,1fr); gap:16px; padding:16px 18px; border-top:1px solid var(--line); }
+.res:first-of-type { border-top:0; }
+.res canvas, .res .ph, .res img { width:92px; height:92px; background:var(--graphite); display:block; object-fit:cover; border-radius:2px; }
+.badge { display:inline-block; font-size:11px; font-weight:700; padding:1px 7px; border:1px solid var(--line); margin-left:8px; color:var(--mute); }
+.linkficha { font-size:12.5px; }
+.res h3 { margin:0 0 2px; font-size:15px; word-break:break-all; }
+.model { display:grid; grid-template-columns:96px minmax(0,1fr); gap:12px; align-items:center; margin-top:10px; }
+.model > span { font-size:12.5px; color:var(--mute); }
+.ladder { display:grid; grid-template-columns:repeat(5,1fr); gap:3px; }
+.ladder div { height:30px; background:var(--line); color:var(--mute); font-size:11.5px; display:flex; align-items:center; justify-content:center; text-align:center; padding:0 3px; line-height:1.1; }
+.ladder div.on { color:#fff; font-weight:700; }
+.ladder div.on.l0 { background:var(--lv0); } .ladder div.on.l1 { background:var(--lv1); } .ladder div.on.l2 { background:var(--lv2); } .ladder div.on.l3 { background:var(--lv3); } .ladder div.on.l4 { background:var(--lv4); }
+.facts { grid-column:2; font-size:12.5px; color:var(--mute); display:flex; gap:14px; flex-wrap:wrap; }
+.facts .v { font-family:var(--mono); color:var(--ink); }
+.cap { color:var(--marker-ink); background:var(--marker); padding:0 6px; font-weight:700; font-size:12px; }
+.verdict { margin:10px 0 0; padding:8px 12px; border-left:4px solid var(--marker); background:var(--blue-soft); font-size:13.5px; }
+.legal { border-left:4px solid var(--marker); padding:10px 14px; margin:0; font:400 15px/1.5 var(--serif); }
+.actions { display:flex; gap:10px; flex-wrap:wrap; padding:14px 18px; border-top:1px solid var(--line); }
+.btn2 { background:transparent; border:1px solid var(--ink); color:var(--ink); padding:8px 14px; font:600 13.5px var(--ui); cursor:pointer; }
+.btn2:hover { background:var(--blue-soft); }
+@media (max-width:560px) { .res { grid-template-columns:1fr; } .facts { grid-column:1; } .model { grid-template-columns:1fr; gap:4px; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <span class="tag">PIT-TA-2026</span>
+    <h1>Cotejo facial — prueba del equipo</h1>
+    <div class="note"><span class="dot loading" id="statusDot" aria-hidden="true"></span><span id="statusNote">Cargando el modelo…</span></div>
+  </div>
+</header>
+<div class="band" id="loadBand"><div class="pad"><strong id="loadLabel">Descargando modelo</strong><div class="bprog"><i id="loadBar"></i></div><span id="loadPct">0 %</span></div></div>
+
+<div class="layout">
+  <form class="prep" id="form" onsubmit="return false">
+    <section class="step">
+      <h2><span class="n">1</span>Modelo de esta prueba</h2>
+      <p class="small">SCRFD-10G + ArcFace ResNet50 (buffalo_l), cargado una sola vez en tu navegador (~184 MB). Ningún archivo sale de tu equipo.</p>
+    </section>
+    <section class="step">
+      <h2><span class="n">2</span>Qué quieres hacer</h2>
+      <label class="opt"><input type="radio" name="mode" value="comparar" checked>
+        <div><b>Comparar con una referencia</b><span>Subes dos imágenes y las comparas entre sí.</span></div></label>
+      <label class="opt"><input type="radio" name="mode" value="buscar">
+        <div><b>Buscar en la base pública</b><span id="dbCount">Compara contra fichas de requisitoriados de PNP e Interpol.</span></div></label>
+    </section>
+    <section class="step">
+      <h2><span class="n">3</span>Subir la evidencia</h2>
+      <label class="drop" id="dropEv"><input class="sr" type="file" id="ev" accept="image/*,video/*">
+        <span><strong>Arrastra una foto o un video</strong> o pulsa para elegirlo</span><small>PNG sin pérdida, o cualquier foto/video de prueba.</small></label>
+      <div class="files" id="evFiles"></div>
+      <div id="videoPicker" hidden style="margin-top:10px">
+        <video id="evVideo" style="width:100%;display:block;background:#000" controls></video>
+        <button class="btn2" id="grabFrame" type="button" style="margin-top:8px;width:100%">Usar este fotograma como evidencia</button>
+      </div>
+    </section>
+    <section class="step" id="stepRefs">
+      <h2><span class="n">4</span>Subir las referencias</h2>
+      <label class="drop" id="dropRef"><input class="sr" type="file" id="refs" accept="image/*" multiple>
+        <span><strong>Arrastra una o varias imágenes</strong> o pulsa para elegirlas</span><small>Fotos de la persona con la que se compara.</small></label>
+      <div class="files" id="refFiles"></div>
+    </section>
+    <section class="step">
+      <h2><span class="n">5</span><span id="goLabel">Comparar</span></h2>
+      <button class="go" id="go" disabled>Comparar imágenes</button>
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+    </section>
+  </form>
+
+  <main class="mesa">
+    <section class="panel" id="intro">
+      <h2>Qué mide esta herramienta</h2>
+      <div class="pad">
+        <p class="lead">Antes de comparar rostros mide cuánto rostro hay. La distancia entre las pupilas, en píxeles, decide si la imagen permite comparar o solo descartar.</p>
+        <div class="ruler" id="rulerDemo" aria-label="Regla de calidad por distancia interpupilar"></div>
+        <p class="small" style="margin-top:14px">Una imagen de 698×392 con el sujeto encapuchado suele quedar en las franjas más bajas. En ese caso el resultado se declara no concluyente, sin que haga falta pedirlo.</p>
+        <p class="small" style="margin-top:14px">No existe una norma peruana ni latinoamericana para esta regla. Cada umbral sí viene de una fuente real: <b>40 px</b> de la norma europea EN 50132-7:2012 (videovigilancia), <b>60 px</b> de estudios de motores comerciales de reconocimiento, <b>90 px</b> de ISO/IEC 39794-5:2019 (fotos de enrolamiento biométrico). El piso de 20 px es un criterio práctico nuestro, no de una norma.</p>
+        <p class="small" style="margin-top:14px"><strong>Esta página es para que el equipo la pruebe.</strong> El registro con SHA-256 que exige el expediente PIT-TA-2026 se genera igual, pero se descarga a tu equipo: nada queda guardado en Netlify.</p>
+        <p class="small" style="margin-top:14px">Puedes elegir tus imágenes mientras el modelo termina de descargar arriba. Solo "Comparar" espera a que esté listo. La segunda vez que entres, el modelo ya queda guardado en tu navegador y no se vuelve a descargar.</p>
+      </div>
+    </section>
+
+    <section class="panel" id="viewerPanel" hidden>
+      <h2>Evidencia analizada <span class="r" id="evInfo"></span></h2>
+      <div class="viewer"><canvas id="cv" aria-label="Evidencia con los rostros detectados"></canvas></div>
+      <div class="facebar" id="facebar"></div>
+      <div class="pad" id="faceRuler" style="padding-top:34px"></div>
+    </section>
+
+    <section class="panel" id="resPanel" hidden>
+      <h2 id="resTitle">Resultado para el rostro seleccionado</h2>
+      <div id="results"></div>
+      <div class="pad"><p class="legal" id="legalNote">Resultado orientativo. No sustituye la comparación morfológica hecha por un perito (ENFSI/FISWG). Se expresa en escala verbal, nunca en porcentaje.</p></div>
+      <div class="actions">
+        <button class="btn2" id="copy" type="button">Copiar resumen para el informe</button>
+        <button class="btn2" id="download" type="button">Descargar registro (.json)</button>
+        <span class="small" id="meta" style="align-self:center"></span>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script type="module">
+import { analyze, cosine, nivelVerbal, sha256Hex, loadModels } from './js/faceengine.js';
+
+const $ = (id) => document.getElementById(id);
+const BANDS = [{ t: 20, c: 'z0', n: 'Inservible' }, { t: 40, c: 'z1', n: 'Solo descarte' }, { t: 60, c: 'z2', n: 'Con reservas' }, { t: 90, c: 'z3', n: 'Morfológico sólido' }, { t: 120, c: 'z4', n: 'Automática' }];
+const MAXPX = 120;
+const LEVELS = ['Sin apoyo', 'No concluyente', 'Apoyo limitado', 'Apoyo moderado', 'Apoyo fuerte'];
+const state = { mode: 'comparar', evFile: null, refFiles: [], res: null, sel: 0, img: null, refImgs: [], refAnalysis: [], modelsReady: false };
+
+/* ---------- modo: comparar 1 a 1 vs buscar en la base pública ---------- */
+function applyMode() {
+  const buscar = state.mode === 'buscar';
+  $('stepRefs').hidden = buscar;
+  $('goLabel').textContent = buscar ? 'Buscar' : 'Comparar';
+  $('go').textContent = buscar ? 'Buscar en la base' : 'Comparar imágenes';
+  refreshFiles();
+}
+document.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener('change', () => { if (r.checked) { state.mode = r.value; applyMode(); } }));
+
+/* ---------- video: elegir un fotograma como evidencia ---------- */
+let videoURL = null;
+function handleEvFile(f) {
+  if (f.type.startsWith('video/')) {
+    if (videoURL) URL.revokeObjectURL(videoURL);
+    videoURL = URL.createObjectURL(f);
+    $('evVideo').src = videoURL; $('videoPicker').hidden = false;
+    state.evFile = null; refreshFiles();
+  } else {
+    $('videoPicker').hidden = true;
+    state.evFile = f; refreshFiles();
+  }
+}
+$('grabFrame').onclick = () => {
+  const v = $('evVideo'), c = document.createElement('canvas');
+  c.width = v.videoWidth; c.height = v.videoHeight;
+  c.getContext('2d').drawImage(v, 0, 0);
+  c.toBlob((blob) => {
+    const t = v.currentTime.toFixed(2).replace('.', '_');
+    state.evFile = new File([blob], `fotograma_${t}s.png`, { type: 'image/png' });
+    $('videoPicker').hidden = true; refreshFiles();
+  }, 'image/png');
+};
+
+function ruler(host, dip) {
+  let prev = 0; const cols = BANDS.map((b) => { const w = b.t - prev; prev = b.t; return w + 'fr'; }).join(' ');
+  host.style.setProperty('--cols', cols);
+  host.innerHTML = '<div class="zones">' + BANDS.map((b) => `<div class="${b.c}">${b.n}</div>`).join('') + '</div>' +
+    '<div class="ticks">' + [0, 20, 40, 60, 90, 120].map((t) => `<span style="left:${t / MAXPX * 100}%">${t}${t === 120 ? '+' : ''}</span>`).join('') + '</div>' +
+    (dip != null ? `<div class="pin" style="left:${Math.min(dip, MAXPX) / MAXPX * 100}%"><b>${dip} px</b><i></i></div>` : '');
+}
+ruler($('rulerDemo'), null);
+
+/* ---------- carga del modelo ---------- */
+// Arranca en segundo plano: los pasos 1-3 ya están disponibles, solo "Comparar" espera a que termine.
+const modelsLoading = (async () => {
+  try {
+    await loadModels((label, got, total) => {
+      $('loadLabel').textContent = label;
+      const pct = total ? Math.round(got / total * 100) : 0;
+      $('loadBar').style.width = pct + '%'; $('loadPct').textContent = (got / 1e6).toFixed(0) + ' MB' + (total ? ' / ' + (total / 1e6).toFixed(0) + ' MB' : '');
+    });
+    $('loadBand').style.display = 'none';
+    $('statusDot').classList.remove('loading'); $('statusNote').textContent = 'Modelo cargado. Todo corre en tu navegador.';
+    state.modelsReady = true;
+  } catch (e) {
+    $('loadLabel').textContent = 'No se pudo cargar el modelo'; $('loadPct').textContent = e.message;
+    $('statusDot').classList.remove('loading'); $('statusDot').style.background = '#B3261E'; $('statusNote').textContent = 'Error al cargar el modelo';
+    throw e;
+  }
+})();
+
+/* ---------- archivos ---------- */
+function wireDrop(zone, input, onFiles, accept = 'image/') {
+  input.addEventListener('change', () => { onFiles([...input.files]); input.value = ''; });
+  ['dragenter', 'dragover'].forEach((e) => zone.addEventListener(e, (ev) => { ev.preventDefault(); zone.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach((e) => zone.addEventListener(e, (ev) => { ev.preventDefault(); zone.classList.remove('over'); }));
+  zone.addEventListener('drop', (ev) => onFiles([...ev.dataTransfer.files].filter((f) => !accept || f.type.startsWith(accept))));
+}
+wireDrop($('dropEv'), $('ev'), (f) => { if (f[0]) handleEvFile(f[0]); }, '');
+wireDrop($('dropRef'), $('refs'), (f) => { state.refFiles.push(...f); refreshFiles(); }, 'image/');
+applyMode();
+
+function chip(file, onRemove) {
+  const d = document.createElement('div'); d.className = 'chip';
+  const i = document.createElement('img'); i.src = URL.createObjectURL(file); i.alt = file.name;
+  const b = document.createElement('button'); b.type = 'button'; b.textContent = '×'; b.setAttribute('aria-label', 'Quitar ' + file.name); b.onclick = onRemove;
+  const s = document.createElement('span'); s.textContent = file.name; s.title = file.name;
+  d.append(i, b, s); return d;
+}
+function refreshFiles() {
+  $('evFiles').replaceChildren(...(state.evFile ? [chip(state.evFile, () => { state.evFile = null; refreshFiles(); })] : []));
+  $('refFiles').replaceChildren(...state.refFiles.map((f, i) => chip(f, () => { state.refFiles.splice(i, 1); refreshFiles(); })));
+  $('go').disabled = state.mode === 'buscar' ? !state.evFile : !(state.evFile && state.refFiles.length);
+}
+const loadImg = (f) => new Promise((r) => { const i = new Image(); i.onload = () => r(i); i.src = URL.createObjectURL(f); });
+
+/* ---------- comparar ---------- */
+$('go').onclick = async () => {
+  const status = $('status'); status.className = 'status'; $('go').disabled = true;
+  try {
+    if (!state.modelsReady) { status.textContent = 'Esperando a que termine de descargar el modelo…'; await modelsLoading; }
+    status.textContent = 'Leyendo la evidencia…';
+    state.img = await loadImg(state.evFile);
+    const evBuf = await state.evFile.arrayBuffer();
+    const evHash = await sha256Hex(evBuf);
+    const evAnalysis = await analyze(state.img);
+    const strip = (a) => ({ width: a.width, height: a.height, faces: a.faces.map(({ embedding, ...f }) => f) });
+
+    if (state.mode === 'buscar') {
+      const gallery = [];
+      for (const [i, f] of evAnalysis.faces.entries()) {
+        status.textContent = `Buscando el rostro ${i + 1} de ${evAnalysis.faces.length} en la base…`;
+        const r = await fetch('/.netlify/functions/search', { method: 'POST', body: JSON.stringify({ embedding: Array.from(f.embedding), limit: 5 }) });
+        const d = await r.json(); if (d.error) throw new Error(d.error);
+        gallery.push(d.matches.map((m) => {
+          const dipMin = Math.min(f.dip, m.dip || 0), v = nivelVerbal(m.similitud, dipMin);
+          return { ...m, dipMin: Math.round(dipMin * 10) / 10, nivel: v.nivel, calidadLimita: v.calidadLimita, escala: v.texto };
+        }));
+      }
+      state.res = {
+        expediente: 'PIT-TA-2026', fecha: new Date().toISOString(), paquete: 'buffalo_l', modo: 'buscar',
+        descripcionModelo: 'SCRFD-10G + ArcFace ResNet50 (WebFace600K) — ejecutado en el navegador',
+        evidencia: { name: state.evFile.name, sha256: evHash, ...strip(evAnalysis) },
+        gallery, aviso: 'Resultado orientativo de apoyo contra fichas públicas de requisitoriados (PNP/Interpol). No es una identificación: verificar manualmente.',
+      };
+      state.sel = 0;
+      status.textContent = 'Listo. Verifica cualquier coincidencia manualmente antes de usarla.';
+      render();
+      $('go').disabled = false;
+      return;
+    }
+
+    state.refImgs = []; state.refAnalysis = [];
+    for (const [i, f] of state.refFiles.entries()) {
+      status.textContent = `Analizando la referencia ${i + 1} de ${state.refFiles.length}…`;
+      const img = await loadImg(f); const buf = await f.arrayBuffer();
+      state.refImgs.push(img);
+      state.refAnalysis.push({ name: f.name, sha256: await sha256Hex(buf), analysis: await analyze(img) });
+    }
+
+    const comparaciones = [];
+    evAnalysis.faces.forEach((fe, i) => state.refAnalysis.forEach((r) => r.analysis.faces.forEach((fr, j) => {
+      const cos = cosine(fe.embedding, fr.embedding), dipMin = Math.min(fe.dip, fr.dip), v = nivelVerbal(cos, dipMin);
+      comparaciones.push({ rostroEvidencia: i, referencia: r.name, rostroReferencia: j, coseno: Math.round(cos * 10000) / 10000, dipMin: Math.round(dipMin * 10) / 10, nivel: v.nivel, calidadLimita: v.calidadLimita, escala: v.texto });
+    })));
+    comparaciones.sort((a, b) => b.coseno - a.coseno);
+    state.res = {
+      expediente: 'PIT-TA-2026', fecha: new Date().toISOString(), paquete: 'buffalo_l', modo: 'comparar', descripcionModelo: 'SCRFD-10G + ArcFace ResNet50 (WebFace600K) — ejecutado en el navegador',
+      evidencia: { name: state.evFile.name, sha256: evHash, ...strip(evAnalysis) },
+      referencias: state.refAnalysis.map((r) => ({ name: r.name, sha256: r.sha256, ...strip(r.analysis) })),
+      comparaciones, aviso: 'Resultado orientativo de apoyo. No sustituye la comparación morfológica por perito (ENFSI/FISWG).',
+    };
+    state.sel = comparaciones.length ? comparaciones[0].rostroEvidencia : 0;
+    status.textContent = 'Listo. Descarga el registro si lo necesitas para el expediente.';
+    render();
+  } catch (e) { status.className = 'status err'; status.textContent = 'No se pudo comparar: ' + e.message; }
+  $('go').disabled = false;
+};
+
+/* ---------- visor ---------- */
+function drawViewer() {
+  const d = state.res, img = state.img, cv = $('cv'), g = cv.getContext('2d');
+  cv.width = img.naturalWidth; cv.height = img.naturalHeight; g.drawImage(img, 0, 0);
+  const lw = Math.max(2, img.naturalWidth / 380), fs = Math.max(13, img.naturalWidth / 42);
+  d.evidencia.faces.forEach((f, i) => {
+    const [x1, y1, x2, y2] = f.box, on = i === state.sel, c = on ? '#F2C318' : 'rgba(242,195,24,.45)', L = Math.min(x2 - x1, y2 - y1) * .22;
+    g.strokeStyle = c; g.lineWidth = on ? lw * 1.4 : lw; g.beginPath();
+    [[x1, y1, 1, 1], [x2, y1, -1, 1], [x1, y2, 1, -1], [x2, y2, -1, -1]].forEach(([x, y, sx, sy]) => { g.moveTo(x + sx * L, y); g.lineTo(x, y); g.lineTo(x, y + sy * L); });
+    g.stroke();
+    g.font = `800 ${fs}px Archivo, sans-serif`; const label = String(i + 1), w = g.measureText(label).width + fs * .7;
+    g.fillStyle = c; g.fillRect(x1, y1 - fs * 1.35, w, fs * 1.35); g.fillStyle = '#2A2200'; g.fillText(label, x1 + fs * .35, y1 - fs * .35);
+    if (on) {
+      const [a, b] = [f.kps[0], f.kps[1]]; g.strokeStyle = '#F2C318'; g.lineWidth = lw; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+      f.kps.forEach((k) => { g.beginPath(); g.arc(k[0], k[1], lw * 1.6, 0, 7); g.fillStyle = '#fff'; g.fill(); g.lineWidth = lw * .6; g.strokeStyle = '#1D2529'; g.stroke(); });
+      g.font = `700 ${fs * .85}px Archivo, sans-serif`; const t = f.dip + ' px', tw = g.measureText(t).width + 10, mx = (a[0] + b[0]) / 2, my = Math.min(a[1], b[1]) - fs * .9;
+      g.fillStyle = '#F2C318'; g.fillRect(mx - tw / 2, my - fs * .8, tw, fs * 1.1); g.fillStyle = '#2A2200'; g.fillText(t, mx - tw / 2 + 5, my);
+    }
+  });
+}
+$('cv').addEventListener('click', (ev) => {
+  const r = $('cv').getBoundingClientRect(), x = (ev.clientX - r.left) * $('cv').width / r.width, y = (ev.clientY - r.top) * $('cv').height / r.height;
+  const faces = state.res.evidencia.faces, hit = faces.findIndex((f) => x >= f.box[0] && x <= f.box[2] && y >= f.box[1] && y <= f.box[3]);
+  if (hit >= 0) { state.sel = hit; render(); }
+});
+
+/* ---------- resultados ---------- */
+function faceCrop(img, box, size = 92) {
+  const c = document.createElement('canvas'); c.width = c.height = size; const g = c.getContext('2d');
+  const w = box[2] - box[0], h = box[3] - box[1], s = Math.max(w, h) * 1.5, cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2;
+  g.drawImage(img, cx - s / 2, cy - s / 2, s, s, 0, 0, size, size); return c;
+}
+function renderCompareResults(d) {
+  const host = $('results'); host.replaceChildren();
+  state.refFiles.forEach((file, ri) => {
+    const cs = d.comparaciones.filter((c) => c.rostroEvidencia === state.sel && c.referencia === file.name).sort((a, b) => b.coseno - a.coseno);
+    const c = cs[0];
+    const refFaces = d.referencias[ri]?.faces || [];
+    const el = document.createElement('div'); el.className = 'res';
+    const thumb = c ? faceCrop(state.refImgs[ri], refFaces[c.rostroReferencia].box) : Object.assign(document.createElement('div'), { className: 'ph' });
+    const body = document.createElement('div');
+    body.innerHTML = `<h3>${file.name}</h3><div class="small">${refFaces.length ? refFaces.length + ' rostro(s) en la referencia' : 'No se detectó rostro en esta referencia'}</div>` +
+      (c ? `<div class="model"><span>buffalo_l</span><div class="ladder" role="img" aria-label="${c.escala}">${LEVELS.map((n, i) => `<div class="${i === c.nivel ? 'on l' + i : ''}">${n}</div>`).join('')}</div></div>
+        <div class="facts"><span>Similitud <span class="v">${c.coseno.toFixed(3)}</span></span><span>DIP mínima <span class="v">${c.dipMin} px</span></span>${c.calidadLimita ? '<span class="cap">La calidad limita la valoración</span>' : ''}</div>`
+      : '<p class="verdict">No concluyente: falta un rostro detectable para comparar.</p>');
+    el.append(thumb, body); host.append(el);
+  });
+}
+function renderSearchResults(d) {
+  const host = $('results'); host.replaceChildren();
+  const matches = d.gallery[state.sel] || [];
+  if (!matches.length) { host.innerHTML = '<div class="pad"><p class="verdict">Sin coincidencias, o no se detectó rostro para buscar.</p></div>'; return; }
+  matches.forEach((m) => {
+    const el = document.createElement('div'); el.className = 'res';
+    const img = document.createElement('img'); img.src = '/' + m.thumb; img.alt = m.nombre || m.id;
+    const body = document.createElement('div');
+    body.innerHTML = `<h3>${m.nombre || '(sin nombre)'} <span class="badge">${m.fuente}</span></h3>
+      <div class="small">${m.delito || ''}${m.lugar ? ' · ' + m.lugar : ''}</div>
+      ${m.url_ficha ? `<div class="linkficha"><a href="${m.url_ficha}" target="_blank" rel="noopener">Ver ficha original ↗</a></div>` : ''}
+      <div class="model"><span>buffalo_l</span><div class="ladder" role="img" aria-label="${m.escala}">${LEVELS.map((n, i) => `<div class="${i === m.nivel ? 'on l' + i : ''}">${n}</div>`).join('')}</div></div>
+      <div class="facts"><span>Similitud <span class="v">${m.similitud.toFixed(3)}</span></span><span>DIP mínima <span class="v">${m.dipMin} px</span></span>${m.calidadLimita ? '<span class="cap">La calidad limita la valoración</span>' : ''}</div>`;
+    el.append(img, body); host.append(el);
+  });
+}
+function render() {
+  const d = state.res, faces = d.evidencia.faces, buscar = d.modo === 'buscar';
+  $('intro').hidden = true; $('viewerPanel').hidden = false; $('resPanel').hidden = false;
+  $('resTitle').textContent = buscar ? 'Coincidencias para el rostro seleccionado' : 'Resultado para el rostro seleccionado';
+  $('legalNote').textContent = buscar
+    ? 'Resultado orientativo contra fichas públicas de requisitoriados (PNP/Interpol). No es una identificación: toda coincidencia debe verificarse manualmente.'
+    : 'Resultado orientativo. No sustituye la comparación morfológica hecha por un perito (ENFSI/FISWG). Se expresa en escala verbal, nunca en porcentaje.';
+  $('evInfo').textContent = `${d.evidencia.name} · ${d.evidencia.width}×${d.evidencia.height} px · ${faces.length} rostro${faces.length === 1 ? '' : 's'}`;
+  drawViewer();
+  $('facebar').replaceChildren(...(faces.length ? faces.map((f, i) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'fbtn'; b.setAttribute('aria-pressed', i === state.sel);
+    b.innerHTML = `<em>${i + 1}</em>Rostro · ${f.dip} px`; b.onclick = () => { state.sel = i; render(); }; return b;
+  }) : [Object.assign(document.createElement('span'), { className: 'small', textContent: 'No se detectó ningún rostro en la evidencia. Resultado: no concluyente.' })]));
+  const f = faces[state.sel], fr = $('faceRuler');
+  if (f) { fr.innerHTML = `<div class="ruler" id="rf"></div><div class="rulerlabel">Rostro ${state.sel + 1}: ${f.dipBanda}.</div>`; ruler($('rf'), f.dip); } else fr.innerHTML = '';
+
+  if (buscar) renderSearchResults(d); else renderCompareResults(d);
+  $('meta').textContent = 'SHA-256 evidencia: ' + d.evidencia.sha256.slice(0, 16) + '…';
+}
+
+$('copy').onclick = async () => {
+  const d = state.res, f = d.evidencia.faces[state.sel];
+  const lines = ['Expediente PIT-TA-2026 · cotejo facial de apoyo (prueba en navegador)', `Evidencia: ${d.evidencia.name} (SHA-256 ${d.evidencia.sha256})`, f ? `Rostro ${state.sel + 1}: distancia interpupilar ${f.dip} px (${f.dipBanda})` : 'Sin rostro detectado'];
+  if (d.modo === 'buscar') (d.gallery[state.sel] || []).forEach((m) => lines.push(`- ${m.nombre} (${m.fuente}): ${m.escala} (similitud ${m.similitud.toFixed(3)})`));
+  else d.comparaciones.filter((c) => c.rostroEvidencia === state.sel).forEach((c) => lines.push(`- ${c.referencia}: ${c.escala} (similitud ${c.coseno.toFixed(3)})`));
+  lines.push(d.modo === 'buscar' ? 'Resultado orientativo; no es una identificación, verificar manualmente.' : 'Resultado orientativo; no sustituye la comparación morfológica por perito.');
+  try { await navigator.clipboard.writeText(lines.join('\n')); $('copy').textContent = 'Resumen copiado'; setTimeout(() => $('copy').textContent = 'Copiar resumen para el informe', 2000); } catch { $('status').textContent = 'No se pudo copiar. Selecciona el texto a mano.'; }
+};
+$('download').onclick = () => {
+  const blob = new Blob([JSON.stringify(state.res, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `cotejo_${state.res.fecha.replace(/[:.]/g, '-')}.json`; a.click();
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+node_modules/
+scripts/
+gallery/source/
+gallery/*.csv
+gallery/embeddings.ndjson

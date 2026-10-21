@@ -1,0 +1,9 @@
+{
+  "name": "aperitaje-cotejo-facial-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cotejo facial PIT-TA-2026 — demo en navegador con búsqueda contra fichas públicas de PNP/Interpol (Neon).",
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4"
+  }
+}
