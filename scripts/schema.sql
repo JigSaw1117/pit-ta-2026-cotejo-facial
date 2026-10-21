@@ -12,7 +12,8 @@ create table if not exists rostros (
   url_ficha text,
   thumb text,                  -- ruta relativa servida por el propio sitio, p.ej. gallery/thumbs/pnp-123.webp
   dip real,                    -- distancia interpupilar medida en la ficha original
-  embedding vector(512),       -- ArcFace ResNet50 (buffalo_l), mismo modelo que corre en el navegador
+  embedding vector(512),          -- ArcFace ResNet50 / WebFace600K (buffalo_l)
+  embedding_antelope vector(512), -- ArcFace ResNet100 / Glint360K (antelopev2) — contraste independiente
   sexo text,
   fecha_nacimiento text,       -- solo INTERPOL
   nacionalidad text,           -- solo INTERPOL
@@ -38,6 +39,10 @@ alter table rostros add column if not exists senas_particulares text;
 alter table rostros add column if not exists departamento text;
 alter table rostros add column if not exists provincia text;
 alter table rostros add column if not exists monto_recompensa real;
+alter table rostros add column if not exists embedding_antelope vector(512);
+
+create index if not exists rostros_embedding_antelope_idx
+  on rostros using hnsw (embedding_antelope vector_cosine_ops);
 
 create index if not exists rostros_embedding_idx
   on rostros using hnsw (embedding vector_cosine_ops);

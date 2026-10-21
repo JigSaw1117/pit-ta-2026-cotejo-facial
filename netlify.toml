@@ -2,10 +2,14 @@
   publish = "."
   # Los .onnx pesan más de 100 MB y no están en git (GitHub los rechaza). Se bajan en cada
   # build desde el release público de InsightFace, igual que haría cualquiera que clone el repo.
+  # Ojo: buffalo_l.zip NO trae subcarpeta interna (se extrae "a models/buffalo_l"); antelopev2.zip SÍ
+  # trae "antelopev2/" dentro (se extrae "a models", ya la trae él mismo). Verificado con `unzip -l`.
   command = """
     mkdir -p models/buffalo_l && \
     curl -fL -o /tmp/buffalo_l.zip https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip && \
-    unzip -o /tmp/buffalo_l.zip -d models/buffalo_l
+    unzip -o /tmp/buffalo_l.zip -d models/buffalo_l && \
+    curl -fL -o /tmp/antelopev2.zip https://github.com/deepinsight/insightface/releases/download/v0.7/antelopev2.zip && \
+    unzip -o /tmp/antelopev2.zip -d models
   """
 
 [[headers]]

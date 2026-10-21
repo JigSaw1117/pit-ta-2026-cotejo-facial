@@ -12,4 +12,4 @@ models/*/*.onnx
 # porque ahora el repo es la fuente del despliegue automático en Netlify.
 gallery/source/
 gallery/*.csv
-gallery/embeddings.ndjson
+gallery/embeddings*.ndjson

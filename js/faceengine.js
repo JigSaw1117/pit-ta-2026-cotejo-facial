@@ -2,8 +2,15 @@
 // Todo corre en el equipo de quien abre la página; ninguna imagen sale a un servidor.
 const ARC = [[38.2946, 51.6963], [73.5318, 51.5014], [56.0252, 71.7366], [41.5493, 92.3655], [70.7299, 92.2041]];
 const DET_SIZE = 640;
-let sessions = null;
-let loadPromise = null; // evita que un segundo clic en "Comparar" dispare una segunda descarga
+
+// Dos paquetes de InsightFace, mismo detector (SCRFD-10G), reconocedor distinto —
+// sirven para el contraste independiente que pide E-10.
+export const PACKS = {
+  buffalo_l: { det: 'models/buffalo_l/det_10g.onnx', rec: 'models/buffalo_l/w600k_r50.onnx', detLabel: 'Detector de rostros (17 MB)', recLabel: 'Reconocedor ArcFace ResNet50 (167 MB)', desc: 'ArcFace ResNet50 / WebFace600K' },
+  antelopev2: { det: 'models/antelopev2/scrfd_10g_bnkps.onnx', rec: 'models/antelopev2/glintr100.onnx', detLabel: 'Detector de rostros (17 MB)', recLabel: 'Reconocedor ArcFace ResNet100 (249 MB)', desc: 'ArcFace ResNet100 / Glint360K' },
+};
+const sessions = {}; // { buffalo_l: {det,rec}, antelopev2: {det,rec} }
+const loadPromises = {}; // evita que un segundo clic dispare una segunda descarga del mismo paquete
 
 // Caché de los .onnx en IndexedDB: la primera visita descarga, las siguientes leen del disco del navegador.
 const DB_NAME = 'aperitaje-modelos', STORE = 'onnx', DB_VERSION = 1;
@@ -38,10 +45,12 @@ async function idbSet(key, blob) {
   } catch { /* si no se puede guardar, simplemente se vuelve a descargar la próxima vez */ }
 }
 
-export async function loadModels(onProgress) {
-  if (sessions) return sessions;
-  if (loadPromise) return loadPromise; // ya hay una carga en curso: esperarla, no repetirla
-  loadPromise = (async () => {
+export async function loadModels(pack, onProgress) {
+  if (sessions[pack]) return sessions[pack];
+  if (loadPromises[pack]) return loadPromises[pack]; // ya hay una carga en curso: esperarla, no repetirla
+  const p = PACKS[pack];
+  if (!p) throw new Error(`Paquete desconocido: ${pack}`);
+  loadPromises[pack] = (async () => {
     ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/';
     const fetchBuf = async (url, label, cacheKey) => {
       const cached = await idbGet(cacheKey);
@@ -61,15 +70,15 @@ export async function loadModels(onProgress) {
       return new Uint8Array(await blob.arrayBuffer());
     };
     const [detBuf, recBuf] = await Promise.all([
-      fetchBuf('models/buffalo_l/det_10g.onnx', 'Detector de rostros (17 MB)', 'buffalo_l-det_10g-v1'),
-      fetchBuf('models/buffalo_l/w600k_r50.onnx', 'Reconocedor ArcFace (167 MB)', 'buffalo_l-w600k_r50-v1'),
+      fetchBuf(p.det, p.detLabel, `${pack}-det-v1`),
+      fetchBuf(p.rec, p.recLabel, `${pack}-rec-v1`),
     ]);
     const opts = { executionProviders: ['wasm'] };
     const [det, rec] = await Promise.all([ort.InferenceSession.create(detBuf, opts), ort.InferenceSession.create(recBuf, opts)]);
-    sessions = { det, rec };
-    return sessions;
+    sessions[pack] = { det, rec };
+    return sessions[pack];
   })();
-  return loadPromise;
+  return loadPromises[pack];
 }
 
 function imageToRGB(img) {
@@ -180,8 +189,8 @@ export function bandaDIP(px) {
   return 'apto biometría automática (>90 px)';
 }
 
-export async function analyze(imgEl, scoreThr = 0.3) {
-  const { det, rec } = await loadModels();
+export async function analyze(imgEl, pack = 'buffalo_l', scoreThr = 0.3) {
+  const { det, rec } = await loadModels(pack);
   const img = imageToRGB(imgEl);
   const faces = await detect(det, img, scoreThr);
   const out = [];

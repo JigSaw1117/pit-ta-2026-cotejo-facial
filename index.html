@@ -218,8 +218,9 @@ function applyMode() {
   const buscar = state.mode === 'buscar';
   $('stepRefs').hidden = buscar;
   $('goLabel').textContent = buscar ? 'Buscar' : 'Comparar';
-  $('go').textContent = buscar ? 'Buscar en la base' : 'Comparar imágenes';
+  $('go').textContent = buscar ? 'Buscar con los dos modelos' : 'Comparar imágenes';
   refreshFiles();
+  if (buscar) ensureAntelope(); // la búsqueda en la base siempre contrasta los dos modelos
 }
 document.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener('change', () => { if (r.checked) { state.mode = r.value; applyMode(); } }));
 
@@ -256,15 +257,17 @@ function ruler(host, dip) {
 }
 ruler($('rulerDemo'), null);
 
-/* ---------- carga del modelo ---------- */
-// Arranca en segundo plano: los pasos 1-3 ya están disponibles, solo "Comparar" espera a que termine.
+/* ---------- carga de modelos ---------- */
+// buffalo_l se descarga siempre (lo usan los dos modos). antelopev2 solo si se entra al
+// modo "buscar en la base", porque ahí se contrastan los dos (E-10).
+function trackLoad(label, got, total) {
+  $('loadLabel').textContent = label;
+  const pct = total ? Math.round(got / total * 100) : 0;
+  $('loadBar').style.width = pct + '%'; $('loadPct').textContent = (got / 1e6).toFixed(0) + ' MB' + (total ? ' / ' + (total / 1e6).toFixed(0) + ' MB' : '');
+}
 const modelsLoading = (async () => {
   try {
-    await loadModels((label, got, total) => {
-      $('loadLabel').textContent = label;
-      const pct = total ? Math.round(got / total * 100) : 0;
-      $('loadBar').style.width = pct + '%'; $('loadPct').textContent = (got / 1e6).toFixed(0) + ' MB' + (total ? ' / ' + (total / 1e6).toFixed(0) + ' MB' : '');
-    });
+    await loadModels('buffalo_l', trackLoad);
     $('loadBand').style.display = 'none';
     $('statusDot').classList.remove('loading'); $('statusNote').textContent = 'Modelo cargado. Todo corre en tu navegador.';
     state.modelsReady = true;
@@ -274,6 +277,24 @@ const modelsLoading = (async () => {
     throw e;
   }
 })();
+let antelopeLoading = null, antelopeReady = false;
+function ensureAntelope() {
+  if (antelopeLoading) return antelopeLoading;
+  $('loadBand').style.display = ''; $('statusDot').classList.add('loading'); $('statusNote').textContent = 'Cargando segundo modelo (antelopev2) para el contraste…';
+  antelopeLoading = (async () => {
+    try {
+      await loadModels('antelopev2', trackLoad);
+      antelopeReady = true;
+      $('loadBand').style.display = 'none';
+      $('statusDot').classList.remove('loading'); $('statusNote').textContent = 'Los dos modelos están cargados.';
+    } catch (e) {
+      $('loadLabel').textContent = 'No se pudo cargar antelopev2'; $('loadPct').textContent = e.message;
+      $('statusDot').classList.remove('loading'); $('statusDot').style.background = '#B3261E'; $('statusNote').textContent = 'Error al cargar antelopev2';
+      throw e;
+    }
+  })();
+  return antelopeLoading;
+}
 
 /* ---------- archivos ---------- */
 function wireDrop(zone, input, onFiles, accept = 'image/') {
@@ -305,27 +326,35 @@ $('go').onclick = async () => {
   const status = $('status'); status.className = 'status'; $('go').disabled = true;
   try {
     if (!state.modelsReady) { status.textContent = 'Esperando a que termine de descargar el modelo…'; await modelsLoading; }
+    if (state.mode === 'buscar' && !antelopeReady) { status.textContent = 'Esperando el segundo modelo (antelopev2)…'; await ensureAntelope(); }
     status.textContent = 'Leyendo la evidencia…';
     state.img = await loadImg(state.evFile);
     const evBuf = await state.evFile.arrayBuffer();
     const evHash = await sha256Hex(evBuf);
-    const evAnalysis = await analyze(state.img);
+    const evAnalysis = await analyze(state.img, 'buffalo_l');
     const strip = (a) => ({ width: a.width, height: a.height, faces: a.faces.map(({ embedding, ...f }) => f) });
 
     if (state.mode === 'buscar') {
+      status.textContent = 'Analizando con el segundo modelo (antelopev2)…';
+      const evAnalysisAntelope = await analyze(state.img, 'antelopev2');
       const gallery = [];
       for (const [i, f] of evAnalysis.faces.entries()) {
-        status.textContent = `Buscando el rostro ${i + 1} de ${evAnalysis.faces.length} en la base…`;
-        const r = await fetch('/.netlify/functions/search', { method: 'POST', body: JSON.stringify({ embedding: Array.from(f.embedding), limit: 5 }) });
+        status.textContent = `Buscando el rostro ${i + 1} de ${evAnalysis.faces.length} en la base (2 modelos)…`;
+        const fa = evAnalysisAntelope.faces[i]; // misma posición = mismo rostro, por tamaño descendente en ambos
+        const r = await fetch('/.netlify/functions/search', {
+          method: 'POST',
+          body: JSON.stringify({ embedding: Array.from(f.embedding), embeddingAntelope: fa ? Array.from(fa.embedding) : undefined, limit: 5 }),
+        });
         const d = await r.json(); if (d.error) throw new Error(d.error);
-        gallery.push(d.matches.map((m) => {
-          const dipMin = Math.min(f.dip, m.dip || 0), v = nivelVerbal(m.similitud, dipMin);
+        const withEscala = (list, dipFace) => (list || []).map((m) => {
+          const dipMin = Math.min(dipFace, m.dip || 0), v = nivelVerbal(m.similitud, dipMin);
           return { ...m, dipMin: Math.round(dipMin * 10) / 10, nivel: v.nivel, calidadLimita: v.calidadLimita, escala: v.texto };
-        }));
+        });
+        gallery.push({ buffalo_l: withEscala(d.buffalo_l, f.dip), antelopev2: withEscala(d.antelopev2, fa ? fa.dip : f.dip) });
       }
       state.res = {
-        expediente: 'PIT-TA-2026', fecha: new Date().toISOString(), paquete: 'buffalo_l', modo: 'buscar',
-        descripcionModelo: 'SCRFD-10G + ArcFace ResNet50 (WebFace600K) — ejecutado en el navegador',
+        expediente: 'PIT-TA-2026', fecha: new Date().toISOString(), modo: 'buscar',
+        descripcionModelo: 'Dos modelos en contraste: ArcFace ResNet50/WebFace600K (buffalo_l) y ArcFace ResNet100/Glint360K (antelopev2)',
         evidencia: { name: state.evFile.name, sha256: evHash, ...strip(evAnalysis) },
         gallery, aviso: 'Resultado orientativo de apoyo contra fichas públicas de requisitoriados (PNP/Interpol). No es una identificación: verificar manualmente.',
       };
@@ -411,36 +440,57 @@ function renderCompareResults(d) {
     el.append(thumb, body); host.append(el);
   });
 }
+function matchCard(m, modelName) {
+  const el = document.createElement('div'); el.className = 'res';
+  const img = document.createElement('img'); img.src = '/' + m.thumb; img.alt = m.nombre || m.id;
+  const body = document.createElement('div');
+  const campo = (label, val) => val ? `<div>${label}<b>${val}</b></div>` : '';
+  const ficha = [
+    campo('Sexo', m.sexo),
+    campo('Nacido', m.fecha_nacimiento),
+    campo('Nacionalidad', m.nacionalidad),
+    campo('Estatura', m.estatura_m ? m.estatura_m + ' m' : ''),
+    campo('Peso', m.peso_kg ? m.peso_kg + ' kg' : ''),
+    campo('Ojos', m.color_ojos),
+    campo('Cabello', m.color_cabello),
+    campo('Departamento', m.departamento),
+    campo('Provincia', m.provincia),
+    campo('Recompensa', m.monto_recompensa ? 'S/ ' + m.monto_recompensa.toLocaleString('es-PE') : ''),
+  ].join('');
+  const senas = m.senas_particulares ? `<div class="small" style="margin-top:6px"><b>Señas particulares:</b> ${m.senas_particulares}</div>` : '';
+  body.innerHTML = `<h3>${m.nombre || '(sin nombre)'} <span class="badge">${m.fuente}</span></h3>
+    <div class="small">${m.delito || ''}${m.lugar ? ' · ' + m.lugar : ''}</div>
+    ${m.url_ficha ? `<div class="linkficha"><a href="${m.url_ficha}" target="_blank" rel="noopener">Ver ficha original ↗</a></div>` : ''}
+    <div class="model"><span>${modelName}</span><div class="ladder" role="img" aria-label="${m.escala}">${LEVELS.map((n, i) => `<div class="${i === m.nivel ? 'on l' + i : ''}">${n}</div>`).join('')}</div></div>
+    <div class="facts"><span>Similitud <span class="v">${m.similitud.toFixed(3)}</span></span><span>DIP mínima <span class="v">${m.dipMin} px</span></span>${m.calidadLimita ? '<span class="cap">La calidad limita la valoración</span>' : ''}</div>
+      ${ficha ? `<div class="ficha">${ficha}</div>` : ''}${senas}`;
+  el.append(img, body);
+  return el;
+}
 function renderSearchResults(d) {
   const host = $('results'); host.replaceChildren();
-  const matches = d.gallery[state.sel] || [];
-  if (!matches.length) { host.innerHTML = '<div class="pad"><p class="verdict">Sin coincidencias, o no se detectó rostro para buscar.</p></div>'; return; }
-  matches.forEach((m) => {
-    const el = document.createElement('div'); el.className = 'res';
-    const img = document.createElement('img'); img.src = '/' + m.thumb; img.alt = m.nombre || m.id;
-    const body = document.createElement('div');
-    const campo = (label, val) => val ? `<div>${label}<b>${val}</b></div>` : '';
-    const ficha = [
-      campo('Sexo', m.sexo),
-      campo('Nacido', m.fecha_nacimiento),
-      campo('Nacionalidad', m.nacionalidad),
-      campo('Estatura', m.estatura_m ? m.estatura_m + ' m' : ''),
-      campo('Peso', m.peso_kg ? m.peso_kg + ' kg' : ''),
-      campo('Ojos', m.color_ojos),
-      campo('Cabello', m.color_cabello),
-      campo('Departamento', m.departamento),
-      campo('Provincia', m.provincia),
-      campo('Recompensa', m.monto_recompensa ? 'S/ ' + m.monto_recompensa.toLocaleString('es-PE') : ''),
-    ].join('');
-    const senas = m.senas_particulares ? `<div class="small" style="margin-top:6px"><b>Señas particulares:</b> ${m.senas_particulares}</div>` : '';
-    body.innerHTML = `<h3>${m.nombre || '(sin nombre)'} <span class="badge">${m.fuente}</span></h3>
-      <div class="small">${m.delito || ''}${m.lugar ? ' · ' + m.lugar : ''}</div>
-      ${m.url_ficha ? `<div class="linkficha"><a href="${m.url_ficha}" target="_blank" rel="noopener">Ver ficha original ↗</a></div>` : ''}
-      <div class="model"><span>buffalo_l</span><div class="ladder" role="img" aria-label="${m.escala}">${LEVELS.map((n, i) => `<div class="${i === m.nivel ? 'on l' + i : ''}">${n}</div>`).join('')}</div></div>
-      <div class="facts"><span>Similitud <span class="v">${m.similitud.toFixed(3)}</span></span><span>DIP mínima <span class="v">${m.dipMin} px</span></span>${m.calidadLimita ? '<span class="cap">La calidad limita la valoración</span>' : ''}</div>
-      ${ficha ? `<div class="ficha">${ficha}</div>` : ''}${senas}`;
-    el.append(img, body); host.append(el);
-  });
+  const g = d.gallery[state.sel] || { buffalo_l: [], antelopev2: [] };
+  if (!g.buffalo_l.length && !g.antelopev2.length) { host.innerHTML = '<div class="pad"><p class="verdict">Sin coincidencias, o no se detectó rostro para buscar.</p></div>'; return; }
+
+  const top1 = g.buffalo_l[0], top2 = g.antelopev2[0];
+  if (top1 && top2) {
+    const same = top1.id === top2.id;
+    const banner = document.createElement('div'); banner.className = 'pad';
+    banner.innerHTML = `<p class="verdict" style="border-left-color:${same ? '#27c46b' : 'var(--marker)'}">${same
+      ? `Los dos modelos coinciden: la coincidencia principal es <b>${top1.nombre}</b> en ambos.`
+      : `Los modelos difieren: buffalo_l propone <b>${top1.nombre}</b>, antelopev2 propone <b>${top2.nombre}</b>. Revisar con más cuidado.`}</p>`;
+    host.append(banner);
+  }
+
+  const col = (title, desc, list) => {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `<h3 style="padding:10px 18px 0;font-size:14px">${title} <span class="small" style="font-weight:400">— ${desc}</span></h3>`;
+    if (!list.length) wrap.innerHTML += '<div class="pad"><p class="small">Sin rostro para este modelo, o sin coincidencias.</p></div>';
+    list.forEach((m) => wrap.append(matchCard(m, title)));
+    return wrap;
+  };
+  host.append(col('buffalo_l', 'ArcFace ResNet50 / WebFace600K', g.buffalo_l));
+  host.append(col('antelopev2', 'ArcFace ResNet100 / Glint360K', g.antelopev2));
 }
 function render() {
   const d = state.res, faces = d.evidencia.faces, buscar = d.modo === 'buscar';
@@ -465,7 +515,11 @@ function render() {
 $('copy').onclick = async () => {
   const d = state.res, f = d.evidencia.faces[state.sel];
   const lines = ['Expediente PIT-TA-2026 · cotejo facial de apoyo (prueba en navegador)', `Evidencia: ${d.evidencia.name} (SHA-256 ${d.evidencia.sha256})`, f ? `Rostro ${state.sel + 1}: distancia interpupilar ${f.dip} px (${f.dipBanda})` : 'Sin rostro detectado'];
-  if (d.modo === 'buscar') (d.gallery[state.sel] || []).forEach((m) => lines.push(`- ${m.nombre} (${m.fuente}): ${m.escala} (similitud ${m.similitud.toFixed(3)})`));
+  if (d.modo === 'buscar') {
+    const g = d.gallery[state.sel] || { buffalo_l: [], antelopev2: [] };
+    g.buffalo_l.forEach((m) => lines.push(`- [buffalo_l] ${m.nombre} (${m.fuente}): ${m.escala} (similitud ${m.similitud.toFixed(3)})`));
+    g.antelopev2.forEach((m) => lines.push(`- [antelopev2] ${m.nombre} (${m.fuente}): ${m.escala} (similitud ${m.similitud.toFixed(3)})`));
+  }
   else d.comparaciones.filter((c) => c.rostroEvidencia === state.sel).forEach((c) => lines.push(`- ${c.referencia}: ${c.escala} (similitud ${c.coseno.toFixed(3)})`));
   lines.push(d.modo === 'buscar' ? 'Resultado orientativo; no es una identificación, verificar manualmente.' : 'Resultado orientativo; no sustituye la comparación morfológica por perito.');
   try { await navigator.clipboard.writeText(lines.join('\n')); $('copy').textContent = 'Resumen copiado'; setTimeout(() => $('copy').textContent = 'Copiar resumen para el informe', 2000); } catch { $('status').textContent = 'No se pudo copiar. Selecciona el texto a mano.'; }
