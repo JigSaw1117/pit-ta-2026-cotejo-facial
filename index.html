@@ -232,18 +232,27 @@ async function buscarFicha(nombreArchivo) {
   const idx = await fichaIndex();
   return idx.get((nombreArchivo || '').trim().toLowerCase()) || null;
 }
+// Si no hay dato real, muestra el promedio nacional marcado como referencia — nunca como si
+// fuera la medición de esta persona.
+function campoRef(label, real, ref, unidad) {
+  if (real) return `<div>${label}<b>${real} ${unidad}</b></div>`;
+  if (ref) return `<div>${label}<b title="Promedio nacional (NCD-RisC 2016). No es una medición de esta persona.">~${ref} ${unidad} <span class="cap" style="font-size:10px">ref.</span></b></div>`;
+  return '';
+}
 function fichaBlockHtml(fi) {
   if (!fi) return '';
   const campo = (label, val) => val ? `<div>${label}<b>${val}</b></div>` : '';
   const ficha = [
     campo('Sexo', fi.sexo), campo('Nacido', fi.fecha_nacimiento), campo('Nacionalidad', fi.nacionalidad),
-    campo('Estatura', fi.estatura_m ? fi.estatura_m + ' m' : ''), campo('Peso', fi.peso_kg ? fi.peso_kg + ' kg' : ''),
+    campoRef('Estatura', fi.estatura_m, fi.estatura_ref_m, 'm'), campoRef('Peso', fi.peso_kg, fi.peso_ref_kg, 'kg'),
     campo('Ojos', fi.color_ojos), campo('Cabello', fi.color_cabello),
     campo('Departamento', fi.departamento), campo('Provincia', fi.provincia),
     campo('Recompensa', fi.monto_recompensa ? 'S/ ' + fi.monto_recompensa.toLocaleString('es-PE') : ''),
   ].join('');
   const senas = fi.senas_particulares ? `<div class="small" style="margin-top:6px"><b>Señas particulares:</b> ${fi.senas_particulares}</div>` : '';
-  return (ficha ? `<div class="ficha">${ficha}</div>` : '') + senas;
+  const nota = (fi.estatura_ref_m && !fi.estatura_m) || (fi.peso_ref_kg && !fi.peso_kg)
+    ? `<div class="small" style="margin-top:6px">"ref." = promedio nacional (NCD-RisC 2016), no una medición de esta persona.</div>` : '';
+  return (ficha ? `<div class="ficha">${ficha}</div>` : '') + senas + nota;
 }
 
 /* ---------- modo: comparar 1 a 1 vs buscar en la base pública ---------- */
@@ -500,8 +509,8 @@ function matchCard(m, modelName) {
     campo('Sexo', m.sexo),
     campo('Nacido', m.fecha_nacimiento),
     campo('Nacionalidad', m.nacionalidad),
-    campo('Estatura', m.estatura_m ? m.estatura_m + ' m' : ''),
-    campo('Peso', m.peso_kg ? m.peso_kg + ' kg' : ''),
+    campoRef('Estatura', m.estatura_m, m.estatura_ref_m, 'm'),
+    campoRef('Peso', m.peso_kg, m.peso_ref_kg, 'kg'),
     campo('Ojos', m.color_ojos),
     campo('Cabello', m.color_cabello),
     campo('Departamento', m.departamento),
@@ -509,12 +518,14 @@ function matchCard(m, modelName) {
     campo('Recompensa', m.monto_recompensa ? 'S/ ' + m.monto_recompensa.toLocaleString('es-PE') : ''),
   ].join('');
   const senas = m.senas_particulares ? `<div class="small" style="margin-top:6px"><b>Señas particulares:</b> ${m.senas_particulares}</div>` : '';
+  const nota = (m.estatura_ref_m && !m.estatura_m) || (m.peso_ref_kg && !m.peso_kg)
+    ? `<div class="small" style="margin-top:6px">"ref." = promedio nacional (NCD-RisC 2016), no una medición de esta persona.</div>` : '';
   body.innerHTML = `<h3>${m.nombre || '(sin nombre)'} <span class="badge">${m.fuente}</span></h3>
     <div class="small">${m.delito || ''}${m.lugar ? ' · ' + m.lugar : ''}</div>
     ${m.url_ficha ? `<div class="linkficha"><a href="${m.url_ficha}" target="_blank" rel="noopener">Ver ficha original ↗</a></div>` : ''}
     <div class="model"><span>${modelName}</span><div class="ladder" role="img" aria-label="${m.escala}">${LEVELS.map((n, i) => `<div class="${i === m.nivel ? 'on l' + i : ''}">${n}</div>`).join('')}</div></div>
     <div class="facts"><span>Similitud <span class="v">${m.similitud.toFixed(3)}</span></span><span>DIP mínima <span class="v">${m.dipMin} px</span></span>${m.calidadLimita ? '<span class="cap">La calidad limita la valoración</span>' : ''}</div>
-      ${ficha ? `<div class="ficha">${ficha}</div>` : ''}${senas}`;
+      ${ficha ? `<div class="ficha">${ficha}</div>` : ''}${senas}${nota}`;
   el.append(img, body);
   return el;
 }

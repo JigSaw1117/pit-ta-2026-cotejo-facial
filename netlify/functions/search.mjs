@@ -12,9 +12,11 @@ function getPool() {
   return pool;
 }
 
+// estatura_ref_m / peso_ref_kg: promedio nacional de referencia, nunca una medición de la persona.
 const FICHA_FIELDS = `id, fuente, nombre, delito, lugar, url_ficha, thumb, dip,
               sexo, fecha_nacimiento, nacionalidad, estatura_m, peso_kg, color_ojos, color_cabello,
-              senas_particulares, departamento, provincia, monto_recompensa`;
+              senas_particulares, departamento, provincia, monto_recompensa,
+              estatura_ref_m, peso_ref_kg`;
 
 async function searchOne(column, embedding, k) {
   const vec = '[' + embedding.join(',') + ']';
