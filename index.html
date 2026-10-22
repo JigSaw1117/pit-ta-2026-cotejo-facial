@@ -155,8 +155,8 @@ header { background:var(--graphite); color:var(--on-graphite); }
     </section>
     <section class="step">
       <h2><span class="n">3</span>Subir la evidencia</h2>
-      <label class="drop" id="dropEv"><input class="sr" type="file" id="ev" accept="image/*,video/*">
-        <span><strong>Arrastra una foto o un video</strong> o pulsa para elegirlo</span><small>PNG sin pérdida, o cualquier foto/video de prueba.</small></label>
+      <label class="drop" id="dropEv"><input class="sr" type="file" id="ev" accept="image/*,video/*" multiple>
+        <span><strong id="evDropLabel">Arrastra una foto o un video</strong> o pulsa para elegirlo</span><small id="evDropHint">PNG sin pérdida, o cualquier foto/video de prueba.</small></label>
       <div class="files" id="evFiles"></div>
       <div id="videoPicker" hidden style="margin-top:10px">
         <video id="evVideo" style="width:100%;display:block;background:#000" controls></video>
@@ -191,6 +191,7 @@ header { background:var(--graphite); color:var(--on-graphite); }
 
     <section class="panel" id="viewerPanel" hidden>
       <h2>Evidencia analizada <span class="r" id="evInfo"></span></h2>
+      <div class="facebar" id="evSelector" hidden></div>
       <div class="viewer"><canvas id="cv" aria-label="Evidencia con los rostros detectados"></canvas></div>
       <div class="facebar" id="facebar"></div>
       <div class="pad" id="faceRuler" style="padding-top:34px"></div>
@@ -216,7 +217,7 @@ const $ = (id) => document.getElementById(id);
 const BANDS = [{ t: 20, c: 'z0', n: 'Inservible' }, { t: 40, c: 'z1', n: 'Solo descarte' }, { t: 60, c: 'z2', n: 'Con reservas' }, { t: 90, c: 'z3', n: 'Morfológico sólido' }, { t: 120, c: 'z4', n: 'Automática' }];
 const MAXPX = 120;
 const LEVELS = ['Sin apoyo', 'No concluyente', 'Apoyo limitado', 'Apoyo moderado', 'Apoyo fuerte'];
-const state = { mode: 'comparar', evFile: null, refFiles: [], res: null, sel: 0, img: null, refImgs: [], refAnalysis: [] };
+const state = { mode: 'comparar', evFiles: [], refFiles: [], res: null, resList: [], evIdx: 0, sel: 0, img: null, refImgs: [], refAnalysis: [] };
 
 /* ---------- reconocer, por nombre de archivo, si es una ficha conocida (PNP/Interpol) ---------- */
 let fichaIndexPromise = null;
@@ -260,23 +261,31 @@ function applyMode() {
   const buscar = state.mode === 'buscar';
   $('stepRefs').hidden = buscar;
   $('goLabel').textContent = buscar ? 'Buscar' : 'Comparar';
-  $('go').textContent = buscar ? 'Buscar con los dos modelos' : 'Comparar imágenes';
+  $('go').textContent = buscar ? 'Buscar en la base' : 'Comparar imágenes';
+  $('evDropLabel').textContent = buscar ? 'Arrastra una o varias fotos, o un video' : 'Arrastra una foto o un video';
+  $('evDropHint').textContent = buscar ? 'Puedes subir varias a la vez; cada una se busca por separado.' : 'PNG sin pérdida, o cualquier foto/video de prueba.';
+  if (!buscar && state.evFiles.length > 1) state.evFiles = state.evFiles.slice(0, 1); // comparar solo admite una evidencia
   refreshFiles();
 }
 document.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener('change', () => { if (r.checked) { state.mode = r.value; applyMode(); } }));
 
 /* ---------- video: elegir un fotograma como evidencia ---------- */
 let videoURL = null;
-function handleEvFile(f) {
-  if (f.type.startsWith('video/')) {
+function handleEvFile(files) {
+  const list = Array.isArray(files) ? files : [files];
+  const vid = list.find((f) => f.type.startsWith('video/'));
+  if (vid) {
     if (videoURL) URL.revokeObjectURL(videoURL);
-    videoURL = URL.createObjectURL(f);
+    videoURL = URL.createObjectURL(vid);
     $('evVideo').src = videoURL; $('videoPicker').hidden = false;
-    state.evFile = null; refreshFiles();
-  } else {
-    $('videoPicker').hidden = true;
-    state.evFile = f; refreshFiles();
+    state.evFiles = []; refreshFiles();
+    return;
   }
+  const imgs = list.filter((f) => f.type.startsWith('image/'));
+  if (!imgs.length) return;
+  $('videoPicker').hidden = true;
+  state.evFiles = state.mode === 'buscar' ? [...state.evFiles, ...imgs] : [imgs[0]];
+  refreshFiles();
 }
 $('grabFrame').onclick = () => {
   const v = $('evVideo'), c = document.createElement('canvas');
@@ -284,7 +293,8 @@ $('grabFrame').onclick = () => {
   c.getContext('2d').drawImage(v, 0, 0);
   c.toBlob((blob) => {
     const t = v.currentTime.toFixed(2).replace('.', '_');
-    state.evFile = new File([blob], `fotograma_${t}s.png`, { type: 'image/png' });
+    const frame = new File([blob], `fotograma_${t}s.png`, { type: 'image/png' });
+    state.evFiles = state.mode === 'buscar' ? [...state.evFiles, frame] : [frame];
     $('videoPicker').hidden = true; refreshFiles();
   }, 'image/png');
 };
@@ -340,7 +350,7 @@ function wireDrop(zone, input, onFiles, accept = 'image/') {
   ['dragleave', 'drop'].forEach((e) => zone.addEventListener(e, (ev) => { ev.preventDefault(); zone.classList.remove('over'); }));
   zone.addEventListener('drop', (ev) => onFiles([...ev.dataTransfer.files].filter((f) => !accept || f.type.startsWith(accept))));
 }
-wireDrop($('dropEv'), $('ev'), (f) => { if (f[0]) handleEvFile(f[0]); }, '');
+wireDrop($('dropEv'), $('ev'), (f) => { if (f.length) handleEvFile(f); }, '');
 wireDrop($('dropRef'), $('refs'), (f) => { state.refFiles.push(...f); refreshFiles(); }, 'image/');
 applyMode();
 
@@ -352,62 +362,82 @@ function chip(file, onRemove) {
   d.append(i, b, s); return d;
 }
 function refreshFiles() {
-  $('evFiles').replaceChildren(...(state.evFile ? [chip(state.evFile, () => { state.evFile = null; refreshFiles(); })] : []));
+  $('evFiles').replaceChildren(...state.evFiles.map((f, i) => chip(f, () => { state.evFiles.splice(i, 1); refreshFiles(); })));
   $('refFiles').replaceChildren(...state.refFiles.map((f, i) => chip(f, () => { state.refFiles.splice(i, 1); refreshFiles(); })));
-  $('go').disabled = state.mode === 'buscar' ? !state.evFile : !(state.evFile && state.refFiles.length);
+  $('go').disabled = state.mode === 'buscar' ? !state.evFiles.length : !(state.evFiles.length && state.refFiles.length);
 }
 const loadImg = (f) => new Promise((r) => { const i = new Image(); i.onload = () => r(i); i.src = URL.createObjectURL(f); });
 
 /* ---------- comparar ---------- */
 const DESCR = { buffalo_l: 'ArcFace ResNet50 / WebFace600K', antelopev2: 'ArcFace ResNet100 / Glint360K' };
+const strip = (a) => ({ width: a.width, height: a.height, faces: a.faces.map(({ embedding, ...f }) => f) });
+
+// Analiza y busca UNA evidencia contra la base; usado en bucle cuando se suben varias a la vez.
+async function buscarUnaEvidencia(file, packs, status, etiqueta) {
+  const img = await loadImg(file);
+  const evBuf = await file.arrayBuffer();
+  const evHash = await sha256Hex(evBuf);
+  const evByPack = {};
+  for (const [i, p] of packs.entries()) { status.textContent = `${etiqueta}: analizando con ${p} (${i + 1}/${packs.length})…`; evByPack[p] = await analyze(img, p); }
+  const evAnalysis = evByPack[packs[0]];
+  const gallery = [];
+  for (const [i, f] of evAnalysis.faces.entries()) {
+    status.textContent = `${etiqueta}: buscando el rostro ${i + 1} de ${evAnalysis.faces.length} en la base…`;
+    const body = { limit: 5 };
+    const faceB = evByPack.buffalo_l?.faces[i], faceA = evByPack.antelopev2?.faces[i];
+    if (faceB) body.embedding = Array.from(faceB.embedding);
+    if (faceA) body.embeddingAntelope = Array.from(faceA.embedding);
+    const r = await fetch('/.netlify/functions/search', { method: 'POST', body: JSON.stringify(body) });
+    const d = await r.json(); if (d.error) throw new Error(d.error);
+    const withEscala = (list, dipFace) => (list || []).map((m) => {
+      const dipMin = Math.min(dipFace, m.dip || 0), v = nivelVerbal(m.similitud, dipMin);
+      return { ...m, dipMin: Math.round(dipMin * 10) / 10, nivel: v.nivel, calidadLimita: v.calidadLimita, escala: v.texto };
+    });
+    const g = {};
+    if (packs.includes('buffalo_l')) g.buffalo_l = withEscala(d.buffalo_l, evByPack.buffalo_l.faces[i]?.dip ?? f.dip);
+    if (packs.includes('antelopev2')) g.antelopev2 = withEscala(d.antelopev2, evByPack.antelopev2?.faces[i]?.dip ?? f.dip);
+    gallery.push(g);
+  }
+  const res = {
+    expediente: 'PIT-TA-2026', fecha: new Date().toISOString(), modo: 'buscar', packs,
+    descripcionModelo: packs.map((p) => `${p} (${DESCR[p]})`).join(' + '),
+    evidencia: { name: file.name, sha256: evHash, ...strip(evAnalysis) },
+    gallery, aviso: 'Resultado orientativo de apoyo contra fichas públicas de requisitoriados (PNP/Interpol). No es una identificación: verificar manualmente.',
+  };
+  return { img, res };
+}
+
 $('go').onclick = async () => {
   const status = $('status'); status.className = 'status'; $('go').disabled = true;
   try {
     const packs = elegidos();
     status.textContent = packs.length > 1 ? 'Esperando a que los dos modelos terminen de cargar…' : 'Esperando a que termine de cargar el modelo…';
     await ensurePacks(packs);
-    status.textContent = 'Leyendo la evidencia…';
-    state.img = await loadImg(state.evFile);
-    const evBuf = await state.evFile.arrayBuffer();
-    const evHash = await sha256Hex(evBuf);
-    const strip = (a) => ({ width: a.width, height: a.height, faces: a.faces.map(({ embedding, ...f }) => f) });
-    const evByPack = {};
-    for (const [i, p] of packs.entries()) { status.textContent = `Analizando con ${p} (${i + 1} de ${packs.length})…`; evByPack[p] = await analyze(state.img, p); }
-    const evAnalysis = evByPack[packs[0]];
 
     if (state.mode === 'buscar') {
-      const gallery = [];
-      for (const [i, f] of evAnalysis.faces.entries()) {
-        status.textContent = `Buscando el rostro ${i + 1} de ${evAnalysis.faces.length} en la base…`;
-        const body = { limit: 5 };
-        const faceB = evByPack.buffalo_l?.faces[i], faceA = evByPack.antelopev2?.faces[i];
-        if (faceB) body.embedding = Array.from(faceB.embedding);
-        if (faceA) body.embeddingAntelope = Array.from(faceA.embedding);
-        const r = await fetch('/.netlify/functions/search', { method: 'POST', body: JSON.stringify(body) });
-        const d = await r.json(); if (d.error) throw new Error(d.error);
-        const withEscala = (list, dipFace) => (list || []).map((m) => {
-          const dipMin = Math.min(dipFace, m.dip || 0), v = nivelVerbal(m.similitud, dipMin);
-          return { ...m, dipMin: Math.round(dipMin * 10) / 10, nivel: v.nivel, calidadLimita: v.calidadLimita, escala: v.texto };
-        });
-        const g = {};
-        if (packs.includes('buffalo_l')) g.buffalo_l = withEscala(d.buffalo_l, evByPack.buffalo_l.faces[i]?.dip ?? f.dip);
-        if (packs.includes('antelopev2')) g.antelopev2 = withEscala(d.antelopev2, evByPack.antelopev2?.faces[i]?.dip ?? f.dip);
-        gallery.push(g);
+      state.resList = [];
+      for (const [i, file] of state.evFiles.entries()) {
+        const etiqueta = state.evFiles.length > 1 ? `Evidencia ${i + 1} de ${state.evFiles.length}` : 'Evidencia';
+        state.resList.push(await buscarUnaEvidencia(file, packs, status, etiqueta));
       }
-      state.res = {
-        expediente: 'PIT-TA-2026', fecha: new Date().toISOString(), modo: 'buscar', packs,
-        descripcionModelo: packs.map((p) => `${p} (${DESCR[p]})`).join(' + '),
-        evidencia: { name: state.evFile.name, sha256: evHash, ...strip(evAnalysis) },
-        gallery, aviso: 'Resultado orientativo de apoyo contra fichas públicas de requisitoriados (PNP/Interpol). No es una identificación: verificar manualmente.',
-      };
-      state.sel = 0;
+      state.evIdx = 0; state.sel = 0;
+      state.img = state.resList[0].img; state.res = state.resList[0].res;
       status.textContent = 'Listo. Verifica cualquier coincidencia manualmente antes de usarla.';
       render();
       $('go').disabled = false;
       return;
     }
 
-    const evFicha = await buscarFicha(state.evFile.name);
+    status.textContent = 'Leyendo la evidencia…';
+    const evFile = state.evFiles[0];
+    state.img = await loadImg(evFile);
+    const evBuf = await evFile.arrayBuffer();
+    const evHash = await sha256Hex(evBuf);
+    const evByPack = {};
+    for (const [i, p] of packs.entries()) { status.textContent = `Analizando con ${p} (${i + 1} de ${packs.length})…`; evByPack[p] = await analyze(state.img, p); }
+    const evAnalysis = evByPack[packs[0]];
+
+    const evFicha = await buscarFicha(evFile.name);
     state.refImgs = []; state.refAnalysis = [];
     for (const [i, f] of state.refFiles.entries()) {
       const img = await loadImg(f); const buf = await f.arrayBuffer();
@@ -428,7 +458,7 @@ $('go').onclick = async () => {
     state.res = {
       expediente: 'PIT-TA-2026', fecha: new Date().toISOString(), modo: 'comparar', packs,
       descripcionModelo: packs.map((p) => `${p} (${DESCR[p]})`).join(' + '),
-      evidencia: { name: state.evFile.name, sha256: evHash, ficha: evFicha, ...strip(evAnalysis) },
+      evidencia: { name: evFile.name, sha256: evHash, ficha: evFicha, ...strip(evAnalysis) },
       referencias: state.refAnalysis.map((r) => ({ name: r.name, sha256: r.sha256, ficha: r.ficha, ...strip(r.byPack[packs[0]]) })),
       comparaciones, aviso: 'Resultado orientativo de apoyo. No sustituye la comparación morfológica por perito (ENFSI/FISWG).',
     };
@@ -556,9 +586,21 @@ function renderSearchResults(d) {
   };
   modelos.forEach((p) => host.append(col(p, DESCR[p] || '', g[p])));
 }
+function switchEvidencia(i) {
+  state.evIdx = i; state.sel = 0;
+  state.img = state.resList[i].img; state.res = state.resList[i].res;
+  render();
+}
 function render() {
   const d = state.res, faces = d.evidencia.faces, buscar = d.modo === 'buscar';
   $('intro').hidden = true; $('viewerPanel').hidden = false; $('resPanel').hidden = false;
+  if (buscar && state.resList.length > 1) {
+    $('evSelector').hidden = false;
+    $('evSelector').replaceChildren(...state.resList.map((r, i) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'fbtn'; b.setAttribute('aria-pressed', i === state.evIdx);
+      b.innerHTML = `<em>${i + 1}</em>${r.res.evidencia.name}`; b.onclick = () => switchEvidencia(i); return b;
+    }));
+  } else { $('evSelector').hidden = true; $('evSelector').replaceChildren(); }
   $('resTitle').textContent = buscar ? 'Coincidencias para el rostro seleccionado' : 'Resultado para el rostro seleccionado';
   $('legalNote').textContent = buscar
     ? 'Resultado orientativo contra fichas públicas de requisitoriados (PNP/Interpol). No es una identificación: toda coincidencia debe verificarse manualmente.'
