@@ -169,8 +169,15 @@ header { background:var(--graphite); color:var(--on-graphite); }
         <span><strong>Arrastra una o varias imágenes</strong> o pulsa para elegirlas</span><small>Fotos de la persona con la que se compara.</small></label>
       <div class="files" id="refFiles"></div>
     </section>
+    <section class="step" id="stepCond">
+      <h2><span class="n">5</span>Condiciones de la comparación</h2>
+      <label class="opt"><input type="checkbox" id="tapar">
+        <div><b>Parte baja del rostro tapada</b><span>Para evidencia con capucha o bufanda: tapa boca y mentón también en las referencias y en las fichas, para comparar en las mismas condiciones.</span></div></label>
+      <label class="opt"><input type="checkbox" id="calibrar" checked>
+        <div><b>Calibrar con la base de fichas</b><span>Puesto de la referencia entre 789 fichas de otras personas y razón de verosimilitud (ISO/IEC 19795-1, escala ENFSI). La primera vez tarda unos minutos.</span></div></label>
+    </section>
     <section class="step">
-      <h2><span class="n">5</span><span id="goLabel">Comparar</span></h2>
+      <h2><span class="n">6</span><span id="goLabel">Comparar</span></h2>
       <button class="go" id="go" disabled>Comparar imágenes</button>
       <div class="status" id="status" role="status" aria-live="polite"></div>
     </section>
@@ -211,7 +218,7 @@ header { background:var(--graphite); color:var(--on-graphite); }
 </div>
 
 <script type="module">
-import { analyze, cosine, nivelVerbal, sha256Hex, loadModels } from './js/faceengine.js';
+import { analyze, cosine, nivelVerbal, sha256Hex, loadModels, plantilla, cargarCalibracion, calibrar } from './js/faceengine.js';
 
 const $ = (id) => document.getElementById(id);
 const BANDS = [{ t: 20, c: 'z0', n: 'Inservible' }, { t: 40, c: 'z1', n: 'Solo descarte' }, { t: 60, c: 'z2', n: 'Con reservas' }, { t: 90, c: 'z3', n: 'Morfológico sólido' }, { t: 120, c: 'z4', n: 'Automática' }];
@@ -260,11 +267,11 @@ function fichaBlockHtml(fi) {
 function applyMode() {
   const buscar = state.mode === 'buscar';
   $('stepRefs').hidden = buscar;
+  $('stepCond').hidden = buscar;
   $('goLabel').textContent = buscar ? 'Buscar' : 'Comparar';
   $('go').textContent = buscar ? 'Buscar en la base' : 'Comparar imágenes';
-  $('evDropLabel').textContent = buscar ? 'Arrastra una o varias fotos, o un video' : 'Arrastra una foto o un video';
-  $('evDropHint').textContent = buscar ? 'Puedes subir varias a la vez; cada una se busca por separado.' : 'PNG sin pérdida, o cualquier foto/video de prueba.';
-  if (!buscar && state.evFiles.length > 1) state.evFiles = state.evFiles.slice(0, 1); // comparar solo admite una evidencia
+  $('evDropLabel').textContent = 'Arrastra una o varias fotos, o un video';
+  $('evDropHint').textContent = buscar ? 'Puedes subir varias a la vez; cada una se busca por separado.' : 'Con varios fotogramas del mismo sujeto se arma una plantilla (promedio ponderado por calidad).';
   refreshFiles();
 }
 document.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener('change', () => { if (r.checked) { state.mode = r.value; applyMode(); } }));
@@ -284,7 +291,7 @@ function handleEvFile(files) {
   const imgs = list.filter((f) => f.type.startsWith('image/'));
   if (!imgs.length) return;
   $('videoPicker').hidden = true;
-  state.evFiles = state.mode === 'buscar' ? [...state.evFiles, ...imgs] : [imgs[0]];
+  state.evFiles = [...state.evFiles, ...imgs];
   refreshFiles();
 }
 $('grabFrame').onclick = () => {
@@ -294,7 +301,7 @@ $('grabFrame').onclick = () => {
   c.toBlob((blob) => {
     const t = v.currentTime.toFixed(2).replace('.', '_');
     const frame = new File([blob], `fotograma_${t}s.png`, { type: 'image/png' });
-    state.evFiles = state.mode === 'buscar' ? [...state.evFiles, frame] : [frame];
+    state.evFiles = [...state.evFiles, frame];
     $('videoPicker').hidden = true; refreshFiles();
   }, 'image/png');
 };
@@ -428,41 +435,62 @@ $('go').onclick = async () => {
       return;
     }
 
-    status.textContent = 'Leyendo la evidencia…';
-    const evFile = state.evFiles[0];
-    state.img = await loadImg(evFile);
-    const evBuf = await evFile.arrayBuffer();
-    const evHash = await sha256Hex(evBuf);
-    const evByPack = {};
-    for (const [i, p] of packs.entries()) { status.textContent = `Analizando con ${p} (${i + 1} de ${packs.length})…`; evByPack[p] = await analyze(state.img, p); }
-    const evAnalysis = evByPack[packs[0]];
+    const tapar = $('tapar').checked, conCalib = $('calibrar').checked;
+    const evs = [];
+    for (const [k, evFile] of state.evFiles.entries()) {
+      const img = await loadImg(evFile);
+      const byPack = {};
+      for (const [i, p] of packs.entries()) { status.textContent = `Analizando la evidencia ${k + 1} de ${state.evFiles.length} con ${p} (${i + 1}/${packs.length})…`; byPack[p] = await analyze(img, p, 0.3, { tapar }); }
+      evs.push({ file: evFile, img, sha256: await sha256Hex(await evFile.arrayBuffer()), ficha: await buscarFicha(evFile.name), byPack });
+    }
+    state.img = evs[0].img;
+    const evByPack = evs[0].byPack, evAnalysis = evByPack[packs[0]];
 
-    const evFicha = await buscarFicha(evFile.name);
     state.refImgs = []; state.refAnalysis = [];
     for (const [i, f] of state.refFiles.entries()) {
       const img = await loadImg(f); const buf = await f.arrayBuffer();
       state.refImgs.push(img);
       const byPack = {};
-      for (const [j, p] of packs.entries()) { status.textContent = `Analizando la referencia ${i + 1} de ${state.refFiles.length} con ${p} (${j + 1}/${packs.length})…`; byPack[p] = await analyze(img, p); }
+      for (const [j, p] of packs.entries()) { status.textContent = `Analizando la referencia ${i + 1} de ${state.refFiles.length} con ${p} (${j + 1}/${packs.length})…`; byPack[p] = await analyze(img, p, 0.3, { tapar }); }
       state.refAnalysis.push({ name: f.name, sha256: await sha256Hex(buf), ficha: await buscarFicha(f.name), byPack });
     }
 
+    // Con varias evidencias, el rostro más grande de cada una entra en una plantilla única por modelo.
+    const usarPlantilla = evs.length > 1, sondas = {};
+    if (usarPlantilla) for (const p of packs) {
+      const faces = evs.map((e) => e.byPack[p].faces[0]).filter(Boolean);
+      const dips = faces.map((f) => f.dip).sort((a, b) => a - b);
+      if (faces.length) sondas[p] = { embedding: plantilla(faces), dip: dips[Math.floor(dips.length / 2)], n: faces.length };
+    }
+    const cals = {};
+    if (conCalib) for (const p of packs) cals[p] = await cargarCalibracion(p, tapar, (i, n) => { status.textContent = `Calibrando con la base de fichas (${p}): ${i} de ${n}… solo la primera vez`; });
+
     const comparaciones = [];
+    const comparar = (p, sonda, dipEv, clave) => state.refAnalysis.forEach((r) => r.byPack[p].faces.forEach((fr, j) => {
+      const cos = cosine(sonda, fr.embedding), dipMin = Math.min(dipEv, fr.dip), v = nivelVerbal(cos, dipMin);
+      const c = { pack: p, rostroEvidencia: clave, referencia: r.name, rostroReferencia: j, coseno: Math.round(cos * 10000) / 10000, dipMin: Math.round(dipMin * 10) / 10, nivel: v.nivel, calidadLimita: v.calidadLimita, escala: v.texto };
+      if (cals[p]) {
+        const k = calibrar(cos, sonda, cals[p]);
+        c.calibracion = { puesto: k.puesto, de: k.de, fichasQueSuperan: k.superan, fmrSup95: Math.round(k.fmrSup * 1e5) / 1e5, tmr: Math.round(k.tmr * 1000) / 1000, rvPrudente: Math.round(k.rv * 10) / 10, escalaENFSI: k.verbal };
+        c.escalaCoseno = c.escala; c.nivel = k.nivel; c.escala = k.verbal;
+      }
+      comparaciones.push(c);
+    }));
     for (const p of packs) {
-      evByPack[p].faces.forEach((fe, i) => state.refAnalysis.forEach((r) => r.byPack[p].faces.forEach((fr, j) => {
-        const cos = cosine(fe.embedding, fr.embedding), dipMin = Math.min(fe.dip, fr.dip), v = nivelVerbal(cos, dipMin);
-        comparaciones.push({ pack: p, rostroEvidencia: i, referencia: r.name, rostroReferencia: j, coseno: Math.round(cos * 10000) / 10000, dipMin: Math.round(dipMin * 10) / 10, nivel: v.nivel, calidadLimita: v.calidadLimita, escala: v.texto });
-      })));
+      if (usarPlantilla) { if (sondas[p]) comparar(p, sondas[p].embedding, sondas[p].dip, 'plantilla'); }
+      else evByPack[p].faces.forEach((fe, i) => comparar(p, fe.embedding, fe.dip, i));
     }
     comparaciones.sort((a, b) => b.coseno - a.coseno);
     state.res = {
       expediente: 'PIT-TA-2026', fecha: new Date().toISOString(), modo: 'comparar', packs,
       descripcionModelo: packs.map((p) => `${p} (${DESCR[p]})`).join(' + '),
-      evidencia: { name: evFile.name, sha256: evHash, ficha: evFicha, ...strip(evAnalysis) },
+      condiciones: { parteBajaTapada: tapar, calibracion: conCalib ? { fichas: Object.values(cals)[0]?.n, paresGenuinos: Object.values(cals)[0]?.pares, norma: 'ISO/IEC 19795-1; escala verbal ENFSI 2015' } : null },
+      evidencia: { name: evs[0].file.name, sha256: evs[0].sha256, ficha: evs[0].ficha, ...strip(evAnalysis) },
+      plantilla: usarPlantilla ? { fotogramas: evs.map((e) => ({ name: e.file.name, sha256: e.sha256, deteccion: e.byPack[packs[0]].deteccion, dip: e.byPack[packs[0]].faces[0]?.dip ?? null })), porModelo: Object.fromEntries(Object.entries(sondas).map(([p, x]) => [p, { fotogramas: x.n, dipMediana: x.dip }])) } : null,
       referencias: state.refAnalysis.map((r) => ({ name: r.name, sha256: r.sha256, ficha: r.ficha, ...strip(r.byPack[packs[0]]) })),
       comparaciones, aviso: 'Resultado orientativo de apoyo. No sustituye la comparación morfológica por perito (ENFSI/FISWG).',
     };
-    state.sel = comparaciones.length ? comparaciones[0].rostroEvidencia : 0;
+    state.sel = usarPlantilla ? 0 : (comparaciones.length ? comparaciones[0].rostroEvidencia : 0);
     status.textContent = 'Listo. Descarga el registro si lo necesitas para el expediente.';
     render();
   } catch (e) { status.className = 'status err'; status.textContent = 'No se pudo comparar: ' + e.message; }
@@ -501,12 +529,14 @@ function faceCrop(img, box, size = 92) {
   const w = box[2] - box[0], h = box[3] - box[1], s = Math.max(w, h) * 1.5, cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2;
   g.drawImage(img, cx - s / 2, cy - s / 2, s, s, 0, 0, size, size); return c;
 }
+const claveSel = (d) => (d.plantilla ? 'plantilla' : state.sel);
+const fmtRV = (x) => x.toLocaleString('es-PE', { maximumFractionDigits: x < 10 ? 1 : 0 });
 function renderCompareResults(d) {
   const host = $('results'); host.replaceChildren();
   const packs = d.packs || ['buffalo_l'];
   state.refFiles.forEach((file, ri) => {
     const rows = packs.map((p) => {
-      const cs = d.comparaciones.filter((c) => c.pack === p && c.rostroEvidencia === state.sel && c.referencia === file.name).sort((a, b) => b.coseno - a.coseno);
+      const cs = d.comparaciones.filter((c) => c.pack === p && c.rostroEvidencia === claveSel(d) && c.referencia === file.name).sort((a, b) => b.coseno - a.coseno);
       return { p, c: cs[0] };
     });
     const ref = d.referencias[ri], fi = ref?.ficha;
@@ -518,12 +548,14 @@ function renderCompareResults(d) {
       <div class="small">${fi ? (fi.delito || '') + (fi.lugar ? ' · ' + fi.lugar : '') : (refFaces.length ? refFaces.length + ' rostro(s) en la referencia' : 'No se detectó rostro en esta referencia')}</div>
       ${fi?.url_ficha ? `<div class="linkficha"><a href="${fi.url_ficha}" target="_blank" rel="noopener">Ver ficha original ↗</a></div>` : ''}` +
       rows.map(({ p, c }) => !c ? '' : `<div class="model"><span>${p}</span><div class="ladder" role="img" aria-label="${c.escala}">${LEVELS.map((n, i) => `<div class="${i === c.nivel ? 'on l' + i : ''}">${n}</div>`).join('')}</div></div>
-        <div class="facts"><span>Similitud <span class="v">${c.coseno.toFixed(3)}</span></span><span>DIP mínima <span class="v">${c.dipMin} px</span></span>${c.calidadLimita ? '<span class="cap">La calidad limita la valoración</span>' : ''}</div>`).join('')
+        <div class="facts"><span>Similitud <span class="v">${c.coseno.toFixed(3)}</span></span><span>DIP mínima <span class="v">${c.dipMin} px</span></span>${c.calidadLimita ? '<span class="cap">La calidad limita la valoración</span>' : ''}</div>
+        ${c.calibracion ? `<div class="facts"><span>Puesto <span class="v">${c.calibracion.puesto} de ${c.calibracion.de}</span></span><span>Fichas que la superan <span class="v">${c.calibracion.fichasQueSuperan}</span></span><span>RV prudente <span class="v">${fmtRV(c.calibracion.rvPrudente)}</span></span></div>
+        <p class="verdict" style="margin-top:6px">${c.calibracion.escalaENFSI} — ENFSI 2015, calibrado con ${d.condiciones.calibracion.fichas} fichas.</p>` : ''}`).join('')
       + (rows[0].c ? '' : '<p class="verdict">No concluyente: falta un rostro detectable para comparar.</p>') + fichaBlockHtml(fi);
     el.append(thumb, body); host.append(el);
   });
   if (packs.length > 1) {
-    const lv = packs.map((p) => d.comparaciones.filter((c) => c.pack === p && c.rostroEvidencia === state.sel).map((c) => c.nivel));
+    const lv = packs.map((p) => d.comparaciones.filter((c) => c.pack === p && c.rostroEvidencia === claveSel(d)).map((c) => c.nivel));
     const coinciden = lv.every((a) => a.length) && lv[0].every((n, i) => n === lv[1][i]);
     const banner = document.createElement('div'); banner.className = 'pad';
     banner.innerHTML = `<p class="verdict" style="border-left-color:${coinciden ? '#27c46b' : 'var(--marker)'}">${coinciden ? 'Los dos modelos coinciden en este resultado.' : 'Los modelos difieren: revisar con más cuidado.'}</p>`;
@@ -601,11 +633,12 @@ function render() {
       b.innerHTML = `<em>${i + 1}</em>${r.res.evidencia.name}`; b.onclick = () => switchEvidencia(i); return b;
     }));
   } else { $('evSelector').hidden = true; $('evSelector').replaceChildren(); }
-  $('resTitle').textContent = buscar ? 'Coincidencias para el rostro seleccionado' : 'Resultado para el rostro seleccionado';
+  $('resTitle').textContent = buscar ? 'Coincidencias para el rostro seleccionado' : d.plantilla ? `Resultado para la plantilla de ${d.plantilla.fotogramas.length} fotogramas` : 'Resultado para el rostro seleccionado';
   $('legalNote').textContent = buscar
     ? 'Resultado orientativo contra fichas públicas de requisitoriados (PNP/Interpol). No es una identificación: toda coincidencia debe verificarse manualmente.'
     : 'Resultado orientativo. No sustituye la comparación morfológica hecha por un perito (ENFSI/FISWG). Se expresa en escala verbal, nunca en porcentaje.';
-  $('evInfo').textContent = `${d.evidencia.name} · ${d.evidencia.width}×${d.evidencia.height} px · ${faces.length} rostro${faces.length === 1 ? '' : 's'}` + (d.evidencia.ficha ? ` · ficha reconocida: ${d.evidencia.ficha.nombre} (${d.evidencia.ficha.fuente})` : '');
+  $('evInfo').textContent = `${d.evidencia.name} · ${d.evidencia.width}×${d.evidencia.height} px · ${faces.length} rostro${faces.length === 1 ? '' : 's'}`
+    + (d.plantilla ? ` · primer fotograma de una plantilla de ${d.plantilla.fotogramas.length}` : '') + (d.condiciones?.parteBajaTapada ? ' · parte baja tapada' : '') + (d.evidencia.ficha ? ` · ficha reconocida: ${d.evidencia.ficha.nombre} (${d.evidencia.ficha.fuente})` : '');
   drawViewer();
   $('facebar').replaceChildren(...(faces.length ? faces.map((f, i) => {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'fbtn'; b.setAttribute('aria-pressed', i === state.sel);
@@ -625,7 +658,10 @@ $('copy').onclick = async () => {
     const g = d.gallery[state.sel] || {};
     Object.keys(g).forEach((p) => g[p].forEach((m) => lines.push(`- [${p}] ${m.nombre} (${m.fuente}): ${m.escala} (similitud ${m.similitud.toFixed(3)})`)));
   }
-  else d.comparaciones.filter((c) => c.rostroEvidencia === state.sel).forEach((c) => lines.push(`- [${c.pack}] ${c.referencia}: ${c.escala} (similitud ${c.coseno.toFixed(3)})`));
+  else {
+    if (d.plantilla) lines.push(`Plantilla de ${d.plantilla.fotogramas.length} fotogramas (promedio ponderado por DIP × score)${d.condiciones.parteBajaTapada ? ', parte baja tapada en evidencia y referencias' : ''}`);
+    d.comparaciones.filter((c) => c.rostroEvidencia === claveSel(d)).forEach((c) => lines.push(`- [${c.pack}] ${c.referencia}: ${c.escala} (similitud ${c.coseno.toFixed(3)}${c.calibracion ? `; puesto ${c.calibracion.puesto} de ${c.calibracion.de}; RV prudente ${fmtRV(c.calibracion.rvPrudente)}` : ''})`));
+  }
   lines.push(d.modo === 'buscar' ? 'Resultado orientativo; no es una identificación, verificar manualmente.' : 'Resultado orientativo; no sustituye la comparación morfológica por perito.');
   try { await navigator.clipboard.writeText(lines.join('\n')); $('copy').textContent = 'Resumen copiado'; setTimeout(() => $('copy').textContent = 'Copiar resumen para el informe', 2000); } catch { $('status').textContent = 'No se pudo copiar. Selecciona el texto a mano.'; }
 };
