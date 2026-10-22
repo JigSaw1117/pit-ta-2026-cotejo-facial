@@ -53,3 +53,27 @@ netlify dev         # sirve la página + las funciones con las variables de ento
 ## Qué no está normado
 
 La regla de calidad (distancia interpupilar) no sigue una norma peruana ni latinoamericana — no existe una para esto. Cada umbral cita su fuente real (ver el panel "Qué mide esta herramienta" en la propia página).
+
+## Mejoras (rama `mejoras-cotejo-condicionado`)
+
+Cambios para que el modo **Comparar** sirva con un dubitado de CCTV encapuchado. Todo sigue corriendo en el navegador.
+
+| Mejora | Qué hace | Dónde |
+|---|---|---|
+| Parte baja tapada | Tapa boca y mentón (filas ≥ 66 del rostro alineado 112×112, gris 120) en la evidencia, en las referencias y en las fichas, para comparar en las mismas condiciones que la capucha | `js/faceengine.js` (`analyze(..., { tapar })`), paso 5 de la página |
+| Plantilla de varios fotogramas | Si subes varias evidencias, toma el rostro más grande de cada una y promedia los vectores ponderando por DIP × score | `plantilla()` |
+| Detección en cascada | 640 px; si no hay rostro, con un margen negro del 25 % (fichas recortadas al ras); si aún no, 1280 px (rostros chicos) | `detectarCascada()` |
+| Calibración con la propia base | Compara la evidencia contra las 789 fichas de `gallery/` (personas distintas): puesto, cuántas la superan, TMR con pares genuinos y **RV prudente** = TMR / FMR superior al 95 % (regla de tres o Wilson), con la escala verbal ENFSI 2015. Reemplaza los umbrales fijos 0,2 / 0,3 / 0,4 / 0,55 cuando está activada | `cargarCalibracion()`, `calibrar()`, `scripts/calibrar_galeria.py` |
+
+**Uso:** en Comparar, sube los fotogramas del sujeto (varios a la vez), las referencias, marca «Parte baja del rostro tapada» si el dubitado lleva capucha y deja activada «Calibrar con la base de fichas». La primera vez la página calcula los vectores de las 789 fichas (unos minutos por modelo) y los guarda en IndexedDB; después es inmediato.
+
+**Archivos de calibración** (`gallery/calib/`, se generan una vez con `python scripts/calibrar_galeria.py models`):
+- `puntos.json`: los 5 puntos faciales de cada miniatura (789 de 791 con rostro).
+- `genuinas.json`: 592 similitudes de 74 pares de la misma persona (fichas de Interpol con 2 o más fotos), con una foto degradada a calidad de video (DIP 25–55 px, desenfoque, JPEG 25–60, gamma).
+Ninguno guarda embeddings, igual que el resto del repositorio.
+
+**Prueba con los 8 fotogramas del caso** (referencia F-11 frontal):
+- Antes: coseno 0,00–0,23 por fotograma, «Sin apoyo» o «No concluyente».
+- Después, ResNet100 (antelopev2), plantilla de 8 fotogramas, parte baja tapada: puesto **1 de 790**, ninguna ficha la supera, RV prudente **203** («apoyo moderadamente fuerte»). Con ResNet50: puesto 4 de 790, RV 74 («apoyo moderado»).
+
+**Límites:** las genuinas son fotos de ficha degradadas, no video real; la RV depende de solo 789 fichas (la menor FMR medible es 3/789); la búsqueda en la base pública (Neon) sigue usando los vectores del servidor, sin tapar. Estatura: la app no la mide; la proporción simple con la chapa de 101 cm dio 200,6 cm frente a 170 cm reales (+18 %), por eso conviene usar la altura de la cámara (2,36 m) con la razón cruzada Z/Zc = |t−b|·|i−v| / (|i−b|·|t−v|).
