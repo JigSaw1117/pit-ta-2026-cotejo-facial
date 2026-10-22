@@ -73,7 +73,7 @@ Cambios para que el modo **Comparar** sirva con un dubitado de CCTV encapuchado.
 Ninguno guarda embeddings, igual que el resto del repositorio.
 
 **Prueba con los 8 fotogramas del caso** (referencia F-11 frontal):
-- Antes: coseno 0,00–0,23 por fotograma, «Sin apoyo» o «No concluyente».
+- Antes: cada fotograma contra cada referencia (24 parejas por modelo), coseno −0,01 a 0,30; todo «Sin apoyo» o «No concluyente» salvo una pareja en «Apoyo limitado» con ResNet100.
 - Después, ResNet100 (antelopev2), plantilla de 8 fotogramas, parte baja tapada: puesto **1 de 790**, ninguna ficha la supera, RV prudente **203** («apoyo moderadamente fuerte»). Con ResNet50: puesto 4 de 790, RV 74 («apoyo moderado»).
 
 **Límites:** las genuinas son fotos de ficha degradadas, no video real; la RV depende de solo 789 fichas (la menor FMR medible es 3/789); la búsqueda en la base pública (Neon) sigue usando los vectores del servidor, sin tapar. Estatura: la app no la mide; la proporción simple con la chapa de 101 cm dio 200,6 cm frente a 170 cm reales (+18 %), por eso conviene usar la altura de la cámara (2,36 m) con la razón cruzada Z/Zc = |t−b|·|i−v| / (|i−b|·|t−v|).
