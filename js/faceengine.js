@@ -57,6 +57,8 @@ export async function loadModels(pack, onProgress) {
       const cached = await idbGet(cacheKey);
       if (cached) { if (onProgress) onProgress(label + ' (en caché del navegador)', cached.byteLength, cached.byteLength); return new Uint8Array(cached); }
       const res = await fetch(url);
+      // Sin esto, un 404 se guardaba en la caché como si fuera el modelo y fallaba en cada visita.
+      if (!res.ok) throw new Error(`No se pudo descargar ${url} (HTTP ${res.status})`);
       const total = Number(res.headers.get('content-length')) || 0;
       const reader = res.body.getReader();
       const chunks = []; let got = 0;
