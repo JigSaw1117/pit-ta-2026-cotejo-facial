@@ -1,7 +1,8 @@
 // Motor de cotejo facial para navegador: SCRFD (detección) + ArcFace (embedding), ONNX Runtime Web.
 // Todo corre en el equipo de quien abre la página; ninguna imagen sale a un servidor.
 const ARC = [[38.2946, 51.6963], [73.5318, 51.5014], [56.0252, 71.7366], [41.5493, 92.3655], [70.7299, 92.2041]];
-const DET_SIZE = 640;
+const DET_SIZE = 640, DET_SIZE_CHICO = 1280; // 1280: segundo intento para rostros chicos (CCTV)
+const Y_TAPA = 66, GRIS = (120 - 127.5) / 127.5; // parte baja tapada en el espacio alineado 112×112 (desde la nariz hacia abajo)
 
 // Dos paquetes de InsightFace, mismo detector (SCRFD-10G), reconocedor distinto —
 // sirven para el contraste independiente que pide E-10.
@@ -90,6 +91,13 @@ function imageToRGB(img) {
   return { data: rgb, width: c.width, height: c.height };
 }
 
+// Margen negro alrededor: las fichas recortadas al ras del rostro no le dejan contexto a SCRFD.
+function conMargen(img, m) {
+  const W = img.width + 2 * m, H = img.height + 2 * m, data = new Uint8ClampedArray(W * H * 3);
+  for (let y = 0; y < img.height; y++) data.set(img.data.subarray(y * img.width * 3, (y + 1) * img.width * 3), ((y + m) * W + m) * 3);
+  return { data, width: W, height: H };
+}
+
 function resizePad(img, size) {
   const scale = Math.min(size / img.width, size / img.height);
   const nw = Math.max(1, Math.round(img.width * scale)), nh = Math.max(1, Math.round(img.height * scale));
@@ -113,7 +121,7 @@ function iou(a, b) {
 }
 function nms(dets, thr) { dets.sort((a, b) => b.score - a.score); const keep = []; for (const d of dets) if (keep.every((k) => iou(k, d) < thr)) keep.push(d); return keep; }
 
-async function detect(session, img, scoreThr) {
+async function detect(session, img, scoreThr, DET_SIZE = 640) {
   const { data: rgba, scale } = resizePad(img, DET_SIZE);
   const plane = DET_SIZE * DET_SIZE;
   const input = new Float32Array(3 * plane);
@@ -152,7 +160,7 @@ function similarity(src, dst) {
   return { zr: re / den, zi: im / den, ms, md };
 }
 
-function alignCrop(img, kps) {
+function alignCrop(img, kps, tapar = false) {
   const { zr, zi, ms, md } = similarity(kps, ARC);
   const mag2 = zr * zr + zi * zi; const S = 112;
   const out = new Float32Array(3 * S * S);
@@ -165,14 +173,14 @@ function alignCrop(img, kps) {
     for (let c = 0; c < 3; c++) {
       const g = (xx, yy) => (xx < 0 || yy < 0 || xx >= W || yy >= H ? 0 : data[(yy * W + xx) * 3 + c]);
       const v = g(x0, y0) * (1 - fx) * (1 - fy) + g(x0 + 1, y0) * fx * (1 - fy) + g(x0, y0 + 1) * (1 - fx) * fy + g(x0 + 1, y0 + 1) * fx * fy;
-      out[c * S * S + y * S + x] = (v - 127.5) / 127.5;
+      out[c * S * S + y * S + x] = tapar && y >= Y_TAPA ? GRIS : (v - 127.5) / 127.5;
     }
   }
   return out;
 }
 
-async function embed(session, img, kps) {
-  const input = alignCrop(img, kps);
+async function embed(session, img, kps, tapar = false) {
+  const input = alignCrop(img, kps, tapar);
   const out = await session.run({ [session.inputNames[0]]: new ort.Tensor('float32', input, [1, 3, 112, 112]) });
   const e = Float32Array.from(out[session.outputNames[0]].data);
   let norm = 0; for (const v of e) norm += v * v; norm = Math.sqrt(norm);
@@ -189,16 +197,79 @@ export function bandaDIP(px) {
   return 'apto biometría automática (>90 px)';
 }
 
-export async function analyze(imgEl, pack = 'buffalo_l', scoreThr = 0.3) {
+// Detección en cascada: 640 px; si no hay rostro, con margen (recortes al ras); si aún no, 1280 px (rostros chicos).
+async function detectarCascada(det, img, scoreThr) {
+  let faces = await detect(det, img, scoreThr, DET_SIZE);
+  if (faces.length) return { faces, intento: '640 px' };
+  const m = Math.round(0.25 * Math.max(img.width, img.height));
+  faces = (await detect(det, conMargen(img, m), scoreThr, DET_SIZE)).map((f) => ({ ...f, box: f.box.map((v) => v - m), kps: f.kps.map(([x, y]) => [x - m, y - m]) }));
+  if (faces.length) return { faces, intento: '640 px con margen' };
+  return { faces: await detect(det, img, scoreThr, DET_SIZE_CHICO), intento: '1280 px' };
+}
+
+// opts.tapar: tapa la parte baja del rostro alineado, para comparar en las mismas condiciones que un dubitado con capucha.
+export async function analyze(imgEl, pack = 'buffalo_l', scoreThr = 0.3, opts = {}) {
   const { det, rec } = await loadModels(pack);
   const img = imageToRGB(imgEl);
-  const faces = await detect(det, img, scoreThr);
+  const { faces, intento } = await detectarCascada(det, img, scoreThr);
   const out = [];
   for (const f of faces) {
-    out.push({ box: f.box.map((v) => Math.round(v * 10) / 10), score: Math.round(f.score * 1000) / 1000, kps: f.kps, dip: Math.round(dip(f.kps) * 10) / 10, dipBanda: bandaDIP(dip(f.kps)), embedding: await embed(rec, img, f.kps) });
+    out.push({ box: f.box.map((v) => Math.round(v * 10) / 10), score: Math.round(f.score * 1000) / 1000, kps: f.kps, dip: Math.round(dip(f.kps) * 10) / 10, dipBanda: bandaDIP(dip(f.kps)), embedding: await embed(rec, img, f.kps, !!opts.tapar) });
   }
   out.sort((a, b) => (b.box[2] - b.box[0]) * (b.box[3] - b.box[1]) - (a.box[2] - a.box[0]) * (a.box[3] - a.box[1]));
-  return { width: img.width, height: img.height, faces: out };
+  return { width: img.width, height: img.height, faces: out, deteccion: intento, tapado: !!opts.tapar };
+}
+
+// Plantilla de varios fotogramas: promedio de los vectores ponderado por DIP × score, renormalizado.
+export function plantilla(faces) {
+  const v = new Float64Array(faces[0].embedding.length);
+  for (const f of faces) { const w = f.dip * f.score; f.embedding.forEach((x, i) => { v[i] += w * x; }); }
+  const n = Math.hypot(...v);
+  return Array.from(v, (x) => x / n);
+}
+
+/* ---------- calibración con la propia base de fichas (ISO/IEC 19795-1; escala verbal ENFSI 2015) ---------- */
+// Los vectores de las 789 fichas se calculan en este navegador la primera vez (unos minutos) y quedan en
+// IndexedDB; el repositorio solo trae sus puntos faciales y las similitudes genuinas (gallery/calib/).
+const calibs = {};
+export async function cargarCalibracion(pack, tapar, onProgress) {
+  const clave = `calib-${pack}-${tapar ? 'tapado' : 'sin_tapar'}-v1`;
+  if (calibs[clave]) return calibs[clave];
+  const [puntos, gen, meta] = await Promise.all(['gallery/calib/puntos.json', 'gallery/calib/genuinas.json', 'gallery/meta.json'].map((u) => fetch(u).then((r) => r.json())));
+  let imp = null;
+  const cached = await idbGet(clave);
+  if (cached && cached.byteLength === puntos.length * 512 * 4) imp = new Float32Array(cached);
+  else {
+    const { rec } = await loadModels(pack);
+    const thumb = new Map(meta.map((m) => [m.id, m.thumb]));
+    imp = new Float32Array(puntos.length * 512);
+    for (const [i, p] of puntos.entries()) {
+      const el = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = thumb.get(p.id); });
+      imp.set(await embed(rec, imageToRGB(el), p.kps, tapar), i * 512);
+      if (onProgress && i % 10 === 0) onProgress(i, puntos.length);
+    }
+    idbSet(clave, new Blob([imp.buffer]));
+  }
+  calibs[clave] = { imp, n: puntos.length, genuinas: gen[pack][tapar ? 'tapado' : 'sin_tapar'], pares: gen.pares };
+  return calibs[clave];
+}
+
+export const ESCALA_ENFSI = [[1, 'Sin apoyo (RV ≤ 1)'], [2, 'Apoyo nulo o muy débil (RV 1–2)'], [10, 'Apoyo débil (RV 2–10)'], [100, 'Apoyo moderado (RV 10–100)'],
+  [1e3, 'Apoyo moderadamente fuerte (RV 100–1.000)'], [1e4, 'Apoyo fuerte (RV 1.000–10.000)'], [1e6, 'Apoyo muy fuerte (RV 10.000–1.000.000)'], [Infinity, 'Apoyo extremadamente fuerte (RV > 1.000.000)']];
+// Cota superior al 95 % de la tasa de falsas coincidencias: regla de tres si ninguna ficha supera; si no, Wilson.
+function fmrSup(k, n, z = 1.96) {
+  if (k === 0) return 3 / n;
+  const p = k / n;
+  return (p + z * z / (2 * n) + z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))) / (1 + z * z / n);
+}
+// Puesto de la referencia entre las fichas, tasa de aciertos (TMR) con los pares genuinos y RV prudente = TMR / FMR superior.
+export function calibrar(cos, sonda, cal) {
+  let k = 0;
+  for (let i = 0; i < cal.n; i++) { let s = 0; for (let j = 0; j < 512; j++) s += sonda[j] * cal.imp[i * 512 + j]; if (s >= cos) k++; }
+  const tmr = cal.genuinas.filter((g) => g >= cos).length / cal.genuinas.length, fs = fmrSup(k, cal.n), rv = tmr / fs;
+  // equivalencia con los 5 niveles de la página: ≤1 sin apoyo · 1–10 no concluyente · 10–100 limitado · 100–10.000 moderado · >10.000 fuerte
+  const nivel = rv <= 1 ? 0 : rv <= 10 ? 1 : rv <= 100 ? 2 : rv <= 1e4 ? 3 : 4;
+  return { puesto: k + 1, de: cal.n + 1, superan: k, fmrSup: fs, tmr, rv, nivel, verbal: ESCALA_ENFSI.find(([lim]) => rv <= lim)[1] };
 }
 
 const NIVELES = ['Sin apoyo a la identidad', 'No concluyente', 'Apoyo limitado', 'Apoyo moderado', 'Apoyo fuerte'];
